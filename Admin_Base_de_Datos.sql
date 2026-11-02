@@ -8,7 +8,7 @@ go
 --Entidades fuertes o padres pues
 --Tabla Usuario
 create table Usuario(
-id_usuario int primary key,
+id_usuario int identity(1,1) primary key,
 nombre varchar(200) not null,
 correo varchar(150) not null,
 contrasena varchar(255) not null
@@ -16,13 +16,13 @@ contrasena varchar(255) not null
 
 --tabla MICROEMPRESA
 create table MicroEmpresa(
-id_microempresa int primary key,
+id_microempresa int identity(1,1) primary key,
 nombre varchar(150) not null,
 --Regla que si o si la empresa es una natural o juridica
 tipo varchar(20) check (tipo in ('Natural', 'Juridica')),
 nit varchar(20) unique
 );
-
+--tabla catalogocuentas
 create table CatalogoCuentas(
 id_catalogo int primary key,
 nombre varchar(100) not null,
@@ -54,7 +54,7 @@ on delete set null --si se borra la empresa, el usuario no se borra
 
 --Tabla CUENTA (Depende de CatalogoCuentas)
 create table Cuenta(
-id_cuenta int primary key,
+id_cuenta int identity(1,1) primary key,
 codigo varchar(20) unique not null,
 nombre varchar(100) not null,
 tipo varchar(50) check (tipo in ('Activo','Pasivo','Patrimonio','Ingreso','Gasto')),
@@ -121,6 +121,7 @@ foreign key(id_cuenta) references Cuenta(id_cuenta)
 on delete no action
 );
 
+--tabla de balance cuenta
 create table Balance_Cuenta(
 id_balance int not null,
 id_balance_cuenta int not null,
@@ -143,3 +144,206 @@ on delete no action
 );
 -- esto no mas lo puse si iba todo bien 
 SELECT name FROM sys.tables;
+go
+
+
+--Procedimientos de almacenado
+--1. Registro de usuarios
+CREATE PROCEDURE usp_RegistrarUsuario
+@p_nombre varchar(150),
+@p_correo varchar(150),
+@p_contrasena varchar(255),
+@p_tipo varchar(20) --'Comun' o 'MicroEmpresa'
+
+as
+begin
+set nocount on; --Pa mejorar el rendimiento
+begin try
+--1. Insertamos en la tabla principal
+insert into Usuario(nombre, correo, contrasena)
+values(@p_nombre, @p_correo, @p_contrasena);
+
+--2. Obtenemos el id que la base de datos acaba de generar
+declare @nuevo_id int;
+set @nuevo_id = SCOPE_IDENTITY();
+--funcion que devuleve el ultimo id insertado
+
+--2. Segun el tipo, sinertamos en su subtipo correspondiente
+if @p_tipo = 'Comun'
+begin
+insert into Persona_Comun(id_usuario)
+values (@nuevo_id);
+end
+else if @p_tipo = 'Microempresa'
+begin
+--El cargo y la empresa se asignan luego,
+--asi que los dejamos como NULL por ahora.
+insert into Usuario_MicroEmpresa(id_usuario,cargo,id_microempresa)
+values (@nuevo_id, NULL, NULL);
+end
+
+print 'Usuario registrado correctamente con ID: '+ CAST(@nuevo_id as varchar);
+end try
+begin catch
+print 'Erro al registrar usuario: '+ ERROR_MESSAGE();
+end catch
+end;
+go
+
+--2. Insertar MovimientoAsiento
+create procedure usp_InsertarMovimientoAsiento
+@p_id_asiento int,
+@p_id_cuenta int,
+@p_tipo varchar (10), --debe o haber
+@p_monto decimal(12,2)
+
+as
+begin 
+set nocount on;
+begin try
+--1. validamos que el monto sea positivo
+if @p_monto <= 0
+begin
+  throw 50003, 'El monto del movimiento debe ser mayor a cero', 1;
+end
+
+--2. Generamos el número de movimiento consecutivo para este asiento
+declare @nuevo_movimiento int;
+--buscamos el ultimo movimiento de este asiento. Si no hay, empezamos en 1
+select @nuevo_movimiento = ISNULL(MAX(id_movimiento),0)+1
+from Movimiento_Asiento
+where id_asiento = @p_id_asiento;
+
+--3. Insertamos la linea (El debe o haber)
+insert into Movimiento_Asiento(id_asiento, id_movimiento, tipo, monto, id_cuenta)
+values(@p_id_asiento, @nuevo_movimiento, @p_tipo, @p_monto, @p_id_cuenta)
+
+--4. Actualizamos los totales en el encabezado del asiento
+--sumamos todos los 'debe' y 'haber' existentes para este asiento y los guardamos
+update Asiento_Contable
+set total_debe = (select ISNULL(SUM(monto),0) from Movimiento_Asiento 
+where id_asiento =  @p_id_asiento and tipo = 'Debe'),
+total_haber = (select ISNULL(SUM(monto),0) from Movimiento_Asiento
+where id_asiento = @p_id_asiento and tipo = 'Haber')
+where id_asiento = @p_id_asiento;
+
+print  'Movimiento insertado correctamente.';
+
+end try
+begin catch
+print 'Error al insertar movimiento: '+ ERROR_MESSAGE();
+end catch
+end;
+go
+
+
+--Procedimiento para generar el balance general
+--1. Procedimiento para crear el encabezado del Balance:
+create procedure usp_CrearBalanceGeneral
+@p_id_usuario int,
+@p_id_microempresa int,
+@p_fecha_inicio date,
+@p_fecha_fin date,
+@p_id_balance_creado int output
+as
+begin
+set nocount on;
+
+begin try
+--creamos el balance contotales en 0
+insert into Balance_General(fecha_inicio,fecha_fin,id_usuario,id_microempresa,
+total_activo,total_pasivo,total_patrimonio)
+values(@p_fecha_inicio, @p_fecha_fin, @p_id_usuario, @p_id_microempresa, 0,0,0);
+
+--devolvemos el id generado a JAVA
+set @p_id_balance_creado = SCOPE_IDENTITY();
+print 'Balance Gneral creado con ID: '+ CAST(@p_id_balance_creado as varchar);
+end try
+begin catch
+print 'Error al crear balance: '+ ERROR_MESSAGE();
+end catch
+end;
+go
+
+--2. Procedimiento para agregar una cuenta a ese Balance:
+create procedure usp_AgregarCuentaBalance
+@p_id_balance int,
+@p_id_cuenta int,
+@p_monto decimal(12,2)
+as
+begin
+set nocount on;
+
+begin try
+--generamos el numero de linea (1, 2, 3...)
+declare @nuevo_id_linea int;
+select @nuevo_id_linea = ISNULL(MAX(id_balance_cuenta), 0)+1
+from Balance_cuenta
+where id_balance = @p_id_balance;
+
+--insertamos la cuenta en el balance
+insert into Balance_Cuenta(id_balance, id_balance_cuenta, monto, id_cuenta)
+values(@p_id_balance, @nuevo_id_linea, @p_monto, @p_id_cuenta);
+
+--actualizamos los totales del encabezado automaticamente
+update Balance_General
+set
+total_activo = ISNULL((select SUM(bc.monto) from Balance_Cuenta bc join Cuenta c on bc.id_cuenta
+ = c.id_cuenta where bc.id_balance = @p_id_balance and c.tipo = 'Activo'), 0),
+ total_pasivo = ISNULL((select SUM(bc.monto) from Balance_Cuenta bc join Cuenta c
+ on bc.id_cuenta = c.id_cuenta where bc.id_balance = @p_id_balance and c.tipo
+ ='Pasivo'),0),
+ total_patrimonio = ISNULL((select SUM(bc.monto) from Balance_Cuenta bc join Cuenta c
+ on bc.id_cuenta = c.id_cuenta where bc.id_balance = @p_id_balance and c.tipo
+ ='Patrimonio'),0)
+ where id_balance = @p_id_balance;
+
+ print 'Cuenta agregada al balance correctamente. ';
+ end try
+ begin catch
+ print 'Error al agregar cuenta: '+ ERROR_MESSAGE();
+ end catch
+ end;
+ go
+
+ --3. crear la view para el libro mayor
+create view vw_LibroMayor
+as
+select 
+    c.id_cuenta,
+    c.codigo,
+    c.nombre as nombre_cuenta,
+    c.tipo,
+    --sumamos todos los movimientos al debe para esa cuenta
+    ISNULL(sum(case when m.tipo = 'Debe' then m.monto else 0 end), 0) as total_debe,
+    --sumamos todos los movimientos al haber para esa cuenta
+    ISNULL(sum(case when m.tipo = 'Haber' then m.monto else 0 end), 0) as total_haber,
+    --calculamos el saldo final segun la naturaleza de la cuenta
+    case 
+        when c.naturaleza = 'Deudor' then 
+            ISNULL(sum(case when m.tipo = 'Debe' then m.monto else 0 end), 0) - ISNULL(sum(case when m.tipo = 'Haber' then m.monto else 0 end), 0)
+        when c.naturaleza = 'Acreedor' then 
+            ISNULL(sum(case when m.tipo = 'Haber' then m.monto else 0 end), 0) - ISNULL(sum(case when m.tipo = 'Debe' then m.monto else 0 end), 0)
+        else 0 
+    end as saldo_final
+from Cuenta c
+--unimos con los movimientos (puede que una cuenta aun no tenga movimientos, por eso left join)
+left join Movimiento_Asiento m on c.id_cuenta = m.id_cuenta
+group by 
+    c.id_cuenta,
+    c.codigo,
+    c.nombre,
+    c.tipo,
+    c.naturaleza;
+go
+--DROP PROCEDURE IF EXISTS usp_InsertarMovimientoAsiento;
+--GO
+
+
+--Ricardo------------------------------------------
+
+
+--Gael---------------------------------------------
+
+
+--Rodrigo------------------------------------------
