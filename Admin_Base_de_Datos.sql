@@ -355,7 +355,7 @@ check_policy = on, default_database = CountingFriend_BD;
 --creados los login creamos los usuarios
 create user  usr_admin for login login_admin;
 create user usr_app for login login_app;
-
+create user usr_auditor for login login_auditor;
 
 
 --Gael---------------------------------------------
