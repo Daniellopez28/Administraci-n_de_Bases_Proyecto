@@ -389,6 +389,23 @@ GRANT SELECT ON SCHEMA::dbo TO rol_auditor;
 DENY SELECT ON dbo.Usuario (contrasena) TO rol_auditor;
 DENY INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO rol_auditor;
 
+--Apratado de seguridad para los roles
+create schema seguridad;
+
+
+create function seguridad.fn_AccesoPorUsuario (@id_usuario int)
+returns table 
+with SCHEMABINDING
+as
+return
+(
+    select 1 as permitido
+    where @id_usuario = cast(session_context(N'id_usuario') as int)       
+       OR is_member('rol_administrador') = 1       
+       OR is_member('rol_auditor') = 1       
+       OR is_member('db_owner') = 1
+);
+go
 
 
 --Gael---------------------------------------------
