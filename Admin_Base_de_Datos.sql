@@ -390,24 +390,48 @@ DENY SELECT ON dbo.Usuario (contrasena) TO rol_auditor;
 DENY INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO rol_auditor;
 
 --Apratado de seguridad para los roles
-create schema seguridad;
+CREATE SCHEMA Seguridad;
+GO
 
+CREATE FUNCTION Seguridad.fn_AccesoPorUsuario(@id_usuario int)
+RETURNS TABLE
+WITH SCHEMABINDING
+AS
+RETURN
+    SELECT 1 AS permitido
+    WHERE @id_usuario = CAST(SESSION_CONTEXT(N'id_usuario') AS int)
+       OR IS_MEMBER('rol_administrador') = 1
+       OR IS_MEMBER('rol_auditor') = 1
+       OR IS_MEMBER('db_owner') = 1;
+GO
 
-create function seguridad.fn_AccesoPorUsuario (@id_usuario int)
-returns table 
-with SCHEMABINDING
-as
-return
-(
-    select 1 as permitido
-    where @id_usuario = cast(session_context(N'id_usuario') as int)       
-       OR is_member('rol_administrador') = 1       
-       OR is_member('rol_auditor') = 1       
-       OR is_member('db_owner') = 1
-);
-go
+CREATE FUNCTION Seguridad.fn_AccesoPorAsiento(@id_asiento int)
+RETURNS TABLE
+WITH SCHEMABINDING
+AS
+RETURN
+    SELECT 1 AS permitido
+    FROM dbo.Asiento_Contable a
+    WHERE a.id_asiento = @id_asiento
+      AND (a.id_usuario = CAST(SESSION_CONTEXT(N'id_usuario') AS int)
+           OR IS_MEMBER('rol_administrador') = 1
+           OR IS_MEMBER('rol_auditor') = 1
+           OR IS_MEMBER('db_owner') = 1);
+GO
 
-
+CREATE FUNCTION Seguridad.fn_AccesoPorBalance(@id_balance int)
+RETURNS TABLE
+WITH SCHEMABINDING
+AS
+RETURN
+    SELECT 1 AS permitido
+    FROM dbo.Balance_General b
+    WHERE b.id_balance = @id_balance
+      AND (b.id_usuario = CAST(SESSION_CONTEXT(N'id_usuario') AS int)
+           OR IS_MEMBER('rol_administrador') = 1
+           OR IS_MEMBER('rol_auditor') = 1
+           OR IS_MEMBER('db_owner') = 1);
+GO
 --Gael---------------------------------------------
 
 
