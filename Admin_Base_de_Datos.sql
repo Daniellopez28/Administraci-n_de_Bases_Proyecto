@@ -359,6 +359,8 @@ create user usr_auditor for login login_auditor;
 
 --Creamos los roles para los usuarios
 create role rol_administrador;
+create role rol_aplicacion;
+
 
 
 --Gael---------------------------------------------
