@@ -374,6 +374,17 @@ ALTER ROLE db_ddladmin       ADD MEMBER rol_administrador;
 ALTER ROLE db_backupoperator ADD MEMBER rol_administrador;
 GRANT EXECUTE ON SCHEMA::dbo TO rol_administrador; --Acceso a todos los datos, tablas y demas de dbo
 
+--Estructura de permisos para la aplicacion (leer, hacer insercciones, modificar y actualizar, ejecutar)
+GRANT SELECT ON SCHEMA::dbo TO rol_aplicacion;
+GRANT EXECUTE ON dbo.usp_RegistrarUsuario         TO rol_aplicacion;
+GRANT EXECUTE ON dbo.usp_InsertarMovimientoAsiento TO rol_aplicacion;
+GRANT EXECUTE ON dbo.usp_CrearBalanceGeneral      TO rol_aplicacion;
+GRANT EXECUTE ON dbo.usp_AgregarCuentaBalance     TO rol_aplicacion;
+-- No existe procedimiento para crear asientos ni empresas, por eso estos permisos directos:
+GRANT INSERT, UPDATE ON dbo.Asiento_Contable TO rol_aplicacion;
+GRANT INSERT, UPDATE ON dbo.MicroEmpresa     TO rol_aplicacion;
+
+
 
 --Gael---------------------------------------------
 
