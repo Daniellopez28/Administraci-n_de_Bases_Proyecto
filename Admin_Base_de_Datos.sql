@@ -341,7 +341,7 @@ go
 
 
 --Ricardo------------------------------------------
---Creacion de usuarios
+--Creacion de logins
 create login login_admin  with password = 'Admin1234!', --Creamos el usuario admin
 ---con el check_policy obligamos a que la contra cumpla con las directivas de seguridad
 check_policy = on, default_database = CountingFriend_BD; --el default_database declara a que base de datos se conectara cada que ingrese
@@ -352,7 +352,8 @@ check_policy = on, default_database = CountingFriend_BD;
 create login login_auditor with password = 'auditor1234',
 check_policy = on, default_database = CountingFriend_BD;
 
-
+--creados los login creamos los usuarios
+create user  usr_admin for login login_admin;
 
 
 
