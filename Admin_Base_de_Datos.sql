@@ -349,7 +349,8 @@ check_policy = on, default_database = CountingFriend_BD; --el default_database d
 create login login_app with password = 'app1234!',
 check_policy = on, default_database = CountingFriend_BD;
 
-
+create login login_auditor with password = 'auditor1234',
+check_policy = on, default_database = CountingFriend_BD;
 
 
 
