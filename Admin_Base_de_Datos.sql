@@ -362,6 +362,11 @@ create role rol_administrador;
 create role rol_aplicacion;
 create role rol_auditor;
 
+--implementamso a los usuarios a los roles creados
+alter role rol_administrador add member usr_admin;
+alter role rol_aplicacion add member usr_app;
+alter role rol_auditor add member usr_auditor;
+
 
 
 --Gael---------------------------------------------
