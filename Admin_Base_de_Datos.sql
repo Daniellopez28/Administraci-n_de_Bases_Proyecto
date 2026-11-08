@@ -346,16 +346,19 @@ create login login_admin  with password = 'Admin1234!', --Creamos el usuario adm
 ---con el check_policy obligamos a que la contra cumpla con las directivas de seguridad
 check_policy = on, default_database = CountingFriend_BD; --el default_database declara a que base de datos se conectara cada que ingrese
 
-create login login_app with password = 'app1234!',
+create login login_app with password = 'App1234!',
 check_policy = on, default_database = CountingFriend_BD;
 
-create login login_auditor with password = 'auditor1234',
+create login login_auditor with password = 'Auditor1234',
 check_policy = on, default_database = CountingFriend_BD;
 
 --creados los login creamos los usuarios
 create user  usr_admin for login login_admin;
 create user usr_app for login login_app;
 create user usr_auditor for login login_auditor;
+
+--Creamos los roles para los usuarios
+create role rol_administrador;
 
 
 --Gael---------------------------------------------
