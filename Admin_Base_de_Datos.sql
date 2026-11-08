@@ -341,6 +341,12 @@ go
 
 
 --Ricardo------------------------------------------
+--Creacion de usuarios
+create login logind_admin  with password = 'Admin1234!', --Creamos el usuario admin
+---con el check_policy obligamos a que la contra cumpla con las directivas de seguridad
+check_policy = on, default_database = CountingFriend_BD; --el default_database declara a que base de datos se conectara cada que ingrese
+
+
 
 
 --Gael---------------------------------------------
