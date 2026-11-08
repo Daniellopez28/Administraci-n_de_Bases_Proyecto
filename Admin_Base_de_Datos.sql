@@ -384,6 +384,11 @@ GRANT EXECUTE ON dbo.usp_AgregarCuentaBalance     TO rol_aplicacion;
 GRANT INSERT, UPDATE ON dbo.Asiento_Contable TO rol_aplicacion;
 GRANT INSERT, UPDATE ON dbo.MicroEmpresa     TO rol_aplicacion;
 
+--Estructura de permisos de auditor (solo lectura)
+GRANT SELECT ON SCHEMA::dbo TO rol_auditor;
+DENY SELECT ON dbo.Usuario (contrasena) TO rol_auditor;
+DENY INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO rol_auditor;
+
 
 
 --Gael---------------------------------------------
