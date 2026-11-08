@@ -367,6 +367,12 @@ alter role rol_administrador add member usr_admin;
 alter role rol_aplicacion add member usr_app;
 alter role rol_auditor add member usr_auditor;
 
+--Estructura de permisos para el administrador (leer, escribir, modificar, hacer respaldos)
+ALTER ROLE db_datareader     ADD MEMBER rol_administrador;
+ALTER ROLE db_datawriter     ADD MEMBER rol_administrador;
+ALTER ROLE db_ddladmin       ADD MEMBER rol_administrador;
+ALTER ROLE db_backupoperator ADD MEMBER rol_administrador;
+GRANT EXECUTE ON SCHEMA::dbo TO rol_administrador; --Acceso a todos los datos, tablas y demas de dbo
 
 
 --Gael---------------------------------------------
