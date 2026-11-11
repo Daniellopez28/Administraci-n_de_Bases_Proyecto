@@ -387,19 +387,6 @@ SELECT CONCAT('C', RIGHT(CONCAT('000', i), 3)),
        1
 FROM n;
 
--- 50 000 asientos repartidos entre los dos usuarios
-SET IDENTITY_INSERT dbo.Asiento_Contable ON;
-;WITH n AS (SELECT TOP (50000) CAST(ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS INT) AS i
-            FROM sys.all_objects a CROSS JOIN sys.all_objects b)
-INSERT INTO dbo.Asiento_Contable(id_asiento, numero, fecha, glosa, total_debe, total_haber, id_usuario)
-SELECT i, i,
-       DATEADD(DAY, -(i % 365), CAST(GETDATE() AS DATE)),
-       CONCAT('Asiento de prueba ', i),
-       10 + (i % 990), 10 + (i % 990),
-       CASE WHEN i % 2 = 0 THEN @u1 ELSE @u2 END
-FROM n;
-SET IDENTITY_INSERT dbo.Asiento_Contable OFF;
-
 --movimientos por asiento (partida doble: Debe = Haber)
 SELECT CAST(ROW_NUMBER() OVER (ORDER BY id_cuenta) AS INT) AS n, id_cuenta INTO #c FROM dbo.Cuenta;
 
