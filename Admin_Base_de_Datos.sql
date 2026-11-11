@@ -375,8 +375,16 @@ alter role db_backupoperator add member rol_administrador;
 grant execute on schema::dbo to rol_administrador;
 
 --Aplicacion
+grant select on schema::dbo to rol_aplicacion; --lee cualqueir tabla de dbo
+grant execute on dbo.usp_registrarusuario          to rol_aplicacion;
+grant execute on dbo.usp_insertarmovimientoasiento to rol_aplicacion;
+grant execute on dbo.usp_crearbalancegeneral       to rol_aplicacion;
+grant execute on dbo.usp_agregarcuentabalance      to rol_aplicacion;
+grant insert, update on dbo.asiento_contable to rol_aplicacion;
+grant insert, update on dbo.microempresa     to rol_aplicacion;
+--Algo importante a decir es que no tiene delete.
 
-
+--Auditor
 --Gael---------------------------------------------
 
 
