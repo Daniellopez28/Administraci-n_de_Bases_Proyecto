@@ -344,6 +344,92 @@ go
 
 
 --Gael---------------------------------------------
+--Poblacion de la base de datos
+select top (100) cast(row_number() over (order by (select null)) as int) as i
+into #n
+from sys.all_objects;
 
+insert into dbo.usuario(nombre, correo, contrasena)
+select concat('usuario ', i),
+       concat('usuario', i, '@test.com'),
+       'hash_de_prueba'
+from #n;
 
+insert into dbo.persona_comun(id_usuario)
+select i from #n where i <= 50;
+
+insert into dbo.microempresa(nombre, tipo, nit)
+select concat('microempresa ', i),
+       case when i % 2 = 0 then 'natural' else 'juridica' end,
+       concat('nit-', right(concat('0000', i), 4))
+from #n;
+
+insert into dbo.usuario_microempresa(id_usuario, cargo, id_microempresa)
+select 50 + i, 'empleado', i
+from #n where i <= 50;
+
+insert into dbo.catalogocuentas(id_catalogo, nombre, descripcion)
+select i, concat('catalogo ', i), 'catalogo de prueba'
+from #n;
+
+insert into dbo.cuenta(codigo, nombre, tipo, naturaleza, id_catalogo)
+select concat('c', right(concat('00', i), 3)),
+       concat('cuenta de prueba ', i),
+       choose(i % 5 + 1, 'activo', 'pasivo', 'patrimonio', 'ingreso', 'gasto'),
+       choose(i % 5 + 1, 'deudor', 'acreedor', 'acreedor', 'acreedor', 'deudor'),
+       i
+from #n;
+
+set identity_insert dbo.balance_general on;
+
+insert into dbo.balance_general(id_balance, fecha_inicio, fecha_fin,
+                                total_activo, total_pasivo, total_patrimonio, id_usuario)
+select i,
+       datefromparts(2026, (i - 1) / 10 + 1, 1),
+       eomonth(datefromparts(2026, (i - 1) / 10 + 1, 1)),
+       1000 + i * 15, 400 + i * 4, 600 + i * 11,
+       (i - 1) % 10 + 1
+from #n;
+
+set identity_insert dbo.balance_general off;
+
+insert into dbo.balance_cuenta(id_balance, id_balance_cuenta, monto, id_cuenta)
+select i, 1, 1000 + i * 15, 5 * (1 + i % 20)
+from #n;
+
+set identity_insert dbo.asiento_contable on;
+
+insert into dbo.asiento_contable(id_asiento, numero, fecha, glosa,
+                                 total_debe, total_haber, id_usuario, id_microempresa)
+select i, i,
+       dateadd(day, -(i * 3), cast(getdate() as date)),
+       concat('asiento de prueba ', i),
+       case when i <= 50 then 100 + i * 10 else 0 end,
+       case when i <= 50 then 100 + i * 10 else 0 end,
+       (i - 1) % 10 + 1,
+       i
+from #n;
+
+set identity_insert dbo.asiento_contable off;
+
+insert into dbo.movimiento_asiento(id_asiento, id_movimiento, tipo, monto, id_cuenta)
+select i, 1, 'debe', 100 + i * 10, 1 + (i % 10)
+from #n where i <= 50
+union all
+select i, 2, 'haber', 100 + i * 10, 11 + (i % 10)
+from #n where i <= 50;
+
+drop table #n;
+
+select 'usuario' as tabla, count(*) as filas from dbo.usuario
+union all select 'persona_comun', count(*) from dbo.persona_comun
+union all select 'microempresa', count(*) from dbo.microempresa
+union all select 'usuario_microempresa', count(*) from dbo.usuario_microempresa
+union all select 'catalogocuentas', count(*) from dbo.catalogocuentas
+union all select 'cuenta', count(*) from dbo.cuenta
+union all select 'balance_general', count(*) from dbo.balance_general
+union all select 'balance_cuenta', count(*) from dbo.balance_cuenta
+union all select 'asiento_contable', count(*) from dbo.asiento_contable
+union all select 'movimiento_asiento', count(*) from dbo.movimiento_asiento;
+GO
 --Rodrigo------------------------------------------
