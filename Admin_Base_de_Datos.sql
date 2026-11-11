@@ -759,11 +759,12 @@ GO
 
 select * from Balance_Cuenta; --0 datos
 select * from Balance_General; --0 datos
-select * from Movimiento_Asiento; -- 0 datos
-
 select * from CatalogoCuentas; --1 dato (catalogo general)
 select * from Cuenta; --50 datos
 select * from MicroEmpresa; --100 datos
+select * from Movimiento_Asiento; -- 0 datos
 select * from Persona_Comun; --2 datos (1, 2)
 select * from Usuario; --102 datos
 select * from Usuario_MicroEmpresa;--50 datos (del 51 al 100)
+
+drop database CountingFriend_BD
