@@ -1,18 +1,18 @@
---Los view generados en este scrip son necesarios para el dashboar en el powerBi
+-- Los view generados en este script son necesarios para el dashboard en el Power BI
 
---1. Crear la view para el libro mayor
-create view vw_LibroMayor
-as
-select 
+-- 1. Crear la view para el libro mayor
+CREATE VIEW vw_LibroMayor
+AS
+SELECT 
     c.id_cuenta,
     c.codigo,
-    c.nombre as nombre_cuenta,
+    c.nombre AS nombre_cuenta,
     c.tipo,
-    --sumamos todos los movimientos al debe para esa cuenta
+    -- sumamos todos los movimientos al debe para esa cuenta
     ISNULL(sum(case when m.tipo = 'Debe' then m.monto else 0 end), 0) as total_debe,
-    --sumamos todos los movimientos al haber para esa cuenta
+    -- sumamos todos los movimientos al haber para esa cuenta
     ISNULL(sum(case when m.tipo = 'Haber' then m.monto else 0 end), 0) as total_haber,
-    --calculamos el saldo final segun la naturaleza de la cuenta
+    -- calculamos el saldo final segun la naturaleza de la cuenta
     case 
         when c.naturaleza = 'Deudor' then 
             ISNULL(sum(case when m.tipo = 'Debe' then m.monto else 0 end), 0) - ISNULL(sum(case when m.tipo = 'Haber' then m.monto else 0 end), 0)
@@ -21,7 +21,7 @@ select
         else 0 
     end as saldo_final
 from Cuenta c
---unimos con los movimientos (puede que una cuenta aun no tenga movimientos, por eso left join)
+-- unimos con los movimientos (puede que una cuenta aun no tenga movimientos, por eso left join)
 left join Movimiento_Asiento m on c.id_cuenta = m.id_cuenta
 group by 
     c.id_cuenta,
@@ -29,9 +29,7 @@ group by
     c.nombre,
     c.tipo,
     c.naturaleza;
-go
---DROP PROCEDURE IF EXISTS usp_InsertarMovimientoAsiento;
---GO
+GO
 
 -- 2. Vista para la evolucion financiera mensual (Activos, Pasivos, Patrimonio por período)
 CREATE VIEW vw_EvolucionFinanciera
@@ -49,7 +47,7 @@ SELECT
 FROM dbo.Balance_General;
 GO
 
--- 3. Vista para las estaditicas de cuentas con mayor movimiento (Gráfico de barras)
+-- 3. Vista para las estadisticas de cuentas con mayor movimiento (Gráfico de barras)
 CREATE VIEW vw_TopCuentasMovimiento
 AS
 SELECT 
@@ -105,7 +103,6 @@ FROM dbo.Usuario u
 LEFT JOIN dbo.Asiento_Contable a ON u.id_usuario = a.id_usuario
 GROUP BY u.id_usuario, u.nombre;
 GO
-
 
 --Se asignan los permisos a ciertos roles para que tengan visualizacion de los view
 GRANT SELECT ON dbo.vw_EvolucionFinanciera    TO rol_administrador, rol_aplicacion, rol_auditor;
