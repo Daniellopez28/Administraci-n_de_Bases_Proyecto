@@ -146,7 +146,6 @@ on delete no action
 SELECT name FROM sys.tables;
 go
 
-
 --Procedimientos de almacenado
 --1. Registro de usuarios
 CREATE PROCEDURE usp_RegistrarUsuario
@@ -376,15 +375,21 @@ grant execute on schema::dbo to rol_administrador;
 
 --Aplicacion
 grant select on schema::dbo to rol_aplicacion; --lee cualqueir tabla de dbo
-grant execute on dbo.usp_registrarusuario          to rol_aplicacion;
-grant execute on dbo.usp_insertarmovimientoasiento to rol_aplicacion;
-grant execute on dbo.usp_crearbalancegeneral       to rol_aplicacion;
-grant execute on dbo.usp_agregarcuentabalance      to rol_aplicacion;
-grant insert, update on dbo.asiento_contable to rol_aplicacion;
-grant insert, update on dbo.microempresa     to rol_aplicacion;
+grant execute on dbo.usp_RegistrarUsuario          to rol_aplicacion;
+grant execute on dbo.usp_InsertarMovimientoAsiento to rol_aplicacion;
+grant execute on dbo.usp_CrearBalanceGeneral       to rol_aplicacion;
+grant execute on dbo.usp_AgregarCuentaBalance      to rol_aplicacion;
+grant insert, update on dbo.Asiento_Contable to rol_aplicacion;
+grant insert, update on dbo.MicroEmpresa     to rol_aplicacion;
 --Algo importante a decir es que no tiene delete.
 
 --Auditor
+grant select on schema::dbo to rol_auditor;
+deny select on dbo.usuario (contrasena) to rol_auditor;
+deny insert, update, delete, execute on schema::dbo to rol_auditor;
+go
+
+
 --Gael---------------------------------------------
 
 
