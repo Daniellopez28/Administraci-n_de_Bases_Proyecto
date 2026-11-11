@@ -409,6 +409,7 @@ FROM m;
 SET IDENTITY_INSERT dbo.Balance_General OFF;
 GO
 
+
 --Apratado de seguridad para los roles
 CREATE SCHEMA Seguridad;
 GO
@@ -664,121 +665,6 @@ GO
 --Optimizacion con indices
 --Gael---------------------------------------------
 --Creacion de esquemas de seguridad
-create schema seguridad;
-go
-
-create function seguridad.fn_accesoporusuario(@id_usuario int)
-returns table
-with schemabinding
-as
-return
-    select 1 as permitido
-    where @id_usuario = cast(session_context(n'id_usuario') as int)
-       or is_member('rol_administrador') = 1
-       or is_member('rol_auditor') = 1
-       or is_member('db_owner') = 1;
-go
-
-create function seguridad.fn_accesoporasiento(@id_asiento int)
-returns table
-with schemabinding
-as
-return
-    select 1 as permitido
-    from dbo.asiento_contable a
-    where a.id_asiento = @id_asiento
-      and (a.id_usuario = cast(session_context(n'id_usuario') as int)
-           or is_member('rol_administrador') = 1
-           or is_member('rol_auditor') = 1
-           or is_member('db_owner') = 1);
-go
-
-create function seguridad.fn_accesoporbalance(@id_balance int)
-returns table
-with schemabinding
-as
-return
-    select 1 as permitido
-    from dbo.balance_general b
-    where b.id_balance = @id_balance
-      and (b.id_usuario = cast(session_context(n'id_usuario') as int)
-           or is_member('rol_administrador') = 1
-           or is_member('rol_auditor') = 1
-           or is_member('db_owner') = 1);
-go
-
-create security policy seguridad.pol_accesoporusuario
-    add filter predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.asiento_contable,
-    add block predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.asiento_contable after insert,
-    add block predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.asiento_contable after update,
-    add filter predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.balance_general,
-    add block predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.balance_general after insert,
-    add block predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.balance_general after update,
-    add filter predicate seguridad.fn_accesoporasiento(id_asiento) on dbo.movimiento_asiento,
-    add block predicate seguridad.fn_accesoporasiento(id_asiento) on dbo.movimiento_asiento after insert,
-    add filter predicate seguridad.fn_accesoporbalance(id_balance) on dbo.balance_cuenta,
-    add block predicate seguridad.fn_accesoporbalance(id_balance) on dbo.balance_cuenta after insert
-    with (state = on);
-go
-
-execute as user = 'usr_app';
-exec sp_set_session_context @key = n'id_usuario', @value = 1;
-
-select count(*) as asientos_visibles_usuario1
-from dbo.asiento_contable;
-
-begin try
-    insert into dbo.asiento_contable(numero, fecha, glosa, id_usuario)
-    values (900001, getdate(), 'intento de insertar a nombre de otro', 2);
-    print 'error: debio bloquearse';
-end try
-begin catch
-    print 'bloqueado correctamente: ' + error_message();
-end catch
-
-exec sp_set_session_context @key = n'id_usuario', @value = null;
-
-select count(*) as asientos_visibles_sin_contexto
-from dbo.asiento_contable;
-
-begin try
-    delete from dbo.asiento_contable
-    where id_asiento = 1;
-    print 'error: debio denegarse';
-end try
-begin catch
-    print 'denegado correctamente: ' + error_message();
-end catch
-
-revert;
-go
-
-execute as user = 'usr_auditor';
-
-select count(*) as asientos_visibles_auditor
-from dbo.asiento_contable;
-
-begin try
-    select contrasena
-    from dbo.usuario;
-    print 'error: debio denegarse';
-end try
-begin catch
-    print 'denegado correctamente: ' + error_message();
-end catch
-
-begin try
-    update dbo.asiento_contable
-    set glosa = 'x'
-    where id_asiento = 1;
-    print 'error: debio denegarse';
-end try
-begin catch
-    print 'denegado correctamente: ' + error_message();
-end catch
-
-revert;
-go
 --Poblacion de la base de datos
 select top (100) cast(row_number() over (order by (select null)) as int) as i
 into #n
@@ -868,3 +754,16 @@ union all select 'asiento_contable', count(*) from dbo.asiento_contable
 union all select 'movimiento_asiento', count(*) from dbo.movimiento_asiento;
 GO
 --Rodrigo------------------------------------------
+
+
+
+select * from Balance_Cuenta; --0 datos
+select * from Balance_General; --0 datos
+select * from Movimiento_Asiento; -- 0 datos
+
+select * from CatalogoCuentas; --1 dato (catalogo general)
+select * from Cuenta; --50 datos
+select * from MicroEmpresa; --100 datos
+select * from Persona_Comun; --2 datos (1, 2)
+select * from Usuario; --102 datos
+select * from Usuario_MicroEmpresa;--50 datos (del 51 al 100)
