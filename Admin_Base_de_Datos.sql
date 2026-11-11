@@ -306,40 +306,7 @@ total_activo = ISNULL((select SUM(bc.monto) from Balance_Cuenta bc join Cuenta c
  end;
  go
 
- --3. crear la view para el libro mayor
-create view vw_LibroMayor
-as
-select 
-    c.id_cuenta,
-    c.codigo,
-    c.nombre as nombre_cuenta,
-    c.tipo,
-    --sumamos todos los movimientos al debe para esa cuenta
-    ISNULL(sum(case when m.tipo = 'Debe' then m.monto else 0 end), 0) as total_debe,
-    --sumamos todos los movimientos al haber para esa cuenta
-    ISNULL(sum(case when m.tipo = 'Haber' then m.monto else 0 end), 0) as total_haber,
-    --calculamos el saldo final segun la naturaleza de la cuenta
-    case 
-        when c.naturaleza = 'Deudor' then 
-            ISNULL(sum(case when m.tipo = 'Debe' then m.monto else 0 end), 0) - ISNULL(sum(case when m.tipo = 'Haber' then m.monto else 0 end), 0)
-        when c.naturaleza = 'Acreedor' then 
-            ISNULL(sum(case when m.tipo = 'Haber' then m.monto else 0 end), 0) - ISNULL(sum(case when m.tipo = 'Debe' then m.monto else 0 end), 0)
-        else 0 
-    end as saldo_final
-from Cuenta c
---unimos con los movimientos (puede que una cuenta aun no tenga movimientos, por eso left join)
-left join Movimiento_Asiento m on c.id_cuenta = m.id_cuenta
-group by 
-    c.id_cuenta,
-    c.codigo,
-    c.nombre,
-    c.tipo,
-    c.naturaleza;
-go
---DROP PROCEDURE IF EXISTS usp_InsertarMovimientoAsiento;
---GO
-
-
+--Quite el view de aqui para dejaro en un mismo script (Gael)
 --Ricardo------------------------------------------
 --Creacion de logins
 CREATE LOGIN login_admin  WITH PASSWORD = 'Admin1234!', --Creamos el usuario admin
