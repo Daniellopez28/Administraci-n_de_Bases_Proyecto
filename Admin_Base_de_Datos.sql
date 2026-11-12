@@ -66,7 +66,7 @@ on update cascade
 
 --Tabla Balance General(Deepende de Usuario y MicroEmpresa)
 create table Balance_General(
-id_balance int primary key,
+id_balance int identity(1,1) primary key,
 fecha_inicio date not null,
 fecha_fin date not null,
 total_activo decimal(12,2) default 0.00,
@@ -82,7 +82,7 @@ on delete set null
 
 --Tabla Asiento Contable (Depende de Usaurio, MicroEmpresa y Balance General)
 create table Asiento_Contable(
-id_asiento int primary key,
+id_asiento int identity(1,1) primary key,
 numero int unique not null, --el numero de asientos no se puede repetir 
 fecha date not null,
 glosa varchar(300),
@@ -780,75 +780,71 @@ end catch
 revert;
 go
 --Poblacion de la base de datos
--- 1. Tabla temporal con los 100 numeritos
+-- 1. Generamos una tabla temporal con los números del 1 al 100
 select top (100) cast(row_number() over (order by (select null)) as int) as i
 into #n
 from sys.all_objects;
 
--- 2. Insertar Usuarios (IDs 1 al 100)
+-- 2. Insertar Usuarios (IDs automáticos del 1 al 100)
 insert into dbo.usuario(nombre, correo, contrasena)
 select concat('usuario ', i), concat('usuario', i, '@test.com'), 'hash_de_prueba'
 from #n;
 
--- 3. Persona_Comun (IDs 1 al 50)
+-- 3. Persona_Comun (Usuarios del 1 al 50)
 insert into dbo.persona_comun(id_usuario)
 select i from #n where i <= 50;
 
--- 4. MicroEmpresas (IDs 1 al 50)
+-- 4. MicroEmpresas (IDs automáticos del 1 al 50)
 insert into dbo.microempresa(nombre, tipo, nit)
 select concat('microempresa ', i), 
        case when i % 2 = 0 then 'natural' else 'juridica' end,
        concat('nit-', right(concat('0000', i), 4))
-from #n where i <= 50; -- Ojo: Solo insertamos 50 para que cuadre con el paso 5
+from #n where i <= 50;
 
--- 5. Usuario_MicroEmpresa (IDs 51 al 100)
--- Como ya insertamos 50 usuarios, ahora asignamos a esos a las microempresas 1 a 50
+-- 5. Usuario_MicroEmpresa (Usuarios del 51 al 100 asignados a las microempresas 1 a 50)
 insert into dbo.usuario_microempresa(id_usuario, cargo, id_microempresa)
 select 50 + i, 'empleado', i
 from #n where i <= 50;
 
--- 6. CatalogoCuentas (IDs 1 al 100)
+-- 6. CatalogoCuentas (IDs manuales del 1 al 100)
 insert into dbo.catalogocuentas(id_catalogo, nombre, descripcion)
 select i, concat('catalogo ', i), 'catalogo de prueba'
 from #n;
 
--- 7. Cuenta (FK al catálogo)
--- Usamos 'i' para el catálogo, pero dejamos que id_cuenta sea automático (IDENTITY)
+-- 7. Cuenta (IDs automáticos, pero amarrados al catálogo 1 al 100)
 insert into dbo.cuenta(codigo, nombre, tipo, naturaleza, id_catalogo)
 select concat('c', right(concat('00', i), 3)),
        concat('cuenta de prueba ', i),
        choose(i % 5 + 1, 'activo', 'pasivo', 'patrimonio', 'ingreso', 'gasto'),
        choose(i % 5 + 1, 'deudor', 'acreedor', 'acreedor', 'acreedor', 'deudor'),
-       i -- Este 'i' del 1 al 100 sí existe en CatalogoCuentas
+       i
 from #n;
 
--- 8. Balance_General (FK a Usuario)
--- Forzamos IDENTITY para controlar los IDs del 1 al 100
-set identity_insert dbo.balance_general on;
-insert into dbo.balance_general(id_balance, fecha_inicio, fecha_fin, total_activo, total_pasivo, total_patrimonio, id_usuario)
-select i, datefromparts(2026, (i - 1) / 10 + 1, 1), eomonth(datefromparts(2026, (i - 1) / 10 + 1, 1)),
+-- 8. Balance_General (SIN id_balance porque es IDENTITY. Del 1 al 100)
+insert into dbo.balance_general(fecha_inicio, fecha_fin, total_activo, total_pasivo, total_patrimonio, id_usuario)
+select datefromparts(2026, (i - 1) / 10 + 1, 1), 
+       eomonth(datefromparts(2026, (i - 1) / 10 + 1, 1)),
        1000 + i * 15, 400 + i * 4, 600 + i * 11,
-       (i - 1) % 10 + 1 -- Te da usuarios del 1 al 10. ¡Estos usuarios sí existen!
+       (i - 1) % 10 + 1
 from #n;
-set identity_insert dbo.balance_general off;
 
--- 9. Balance_Cuenta (FK a Balance_General y Cuenta)
+-- 9. Balance_Cuenta (Usa el 'i' para id_balance, ya que se generaron en orden del 1 al 100)
 insert into dbo.balance_cuenta(id_balance, id_balance_cuenta, monto, id_cuenta)
-select i, 1, 1000 + i * 15, 1 + (i % 50) -- Usamos un ID de cuenta válido (del 1 al 50)
+select i, 1, 1000 + i * 15, 1 + (i % 50)
 from #n;
 
--- 10. Asiento_Contable (FK a Usuario y MicroEmpresa)
--- NOTA: Quité el IDENTITY_INSERT aquí porque tu tabla NO tiene identity en id_asiento
-insert into dbo.asiento_contable(id_asiento, numero, fecha, glosa, total_debe, total_haber, id_usuario, id_microempresa)
-select i, i, dateadd(day, -(i * 3), cast(getdate() as date)),
+-- 10. Asiento_Contable (SIN id_asiento porque es IDENTITY)
+insert into dbo.asiento_contable(numero, fecha, glosa, total_debe, total_haber, id_usuario, id_microempresa)
+select i, 
+       dateadd(day, -(i * 3), cast(getdate() as date)),
        concat('asiento de prueba ', i),
        case when i <= 50 then 100 + i * 10 else 0 end,
        case when i <= 50 then 100 + i * 10 else 0 end,
-       (i - 1) % 10 + 1, -- Usuarios 1 al 10 (Existen)
-       1 + (i % 50)      -- Microempresas 1 al 50 (Existen)
+       (i - 1) % 10 + 1, 
+       1 + (i % 50)      
 from #n;
 
--- 11. Movimiento_Asiento
+-- 11. Movimiento_Asiento (2 movimientos por cada asiento del 1 al 50)
 insert into dbo.movimiento_asiento(id_asiento, id_movimiento, tipo, monto, id_cuenta)
 select i, 1, 'debe', 100 + i * 10, 1 + (i % 10)
 from #n where i <= 50
@@ -870,3 +866,4 @@ union all select 'asiento_contable', count(*) from dbo.asiento_contable
 union all select 'movimiento_asiento', count(*) from dbo.movimiento_asiento;
 GO
 --Rodrigo------------------------------------------
+
