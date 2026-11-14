@@ -889,3 +889,49 @@ EXEC sp_add_jobschedule
 --Agregamos el job al servidor
 EXEC sp_add_jobserver @job_name = N'Backup_Completo_CountingFriend';
 GO
+
+-- 1. Crear el Job
+EXEC sp_add_job @job_name = N'Backup_Diferencial_CountingFriend';
+
+-- 2. Definir el comando de backup
+EXEC sp_add_jobstep 
+    @job_name = N'Backup_Diferencial_CountingFriend',
+    @step_name = N'Hacer Diff Backup',
+    @command = N'BACKUP DATABASE CountingFriend_BD TO DISK = ''C:\Backups\CountingFriend\Diff.bak'' WITH DIFFERENTIAL, INIT;';
+
+-- 3. Asignar el horario (Lunes a Sábado 2:00 AM)
+EXEC sp_add_jobschedule 
+    @job_name = N'Backup_Diferencial_CountingFriend',
+    @name = N'Horario_Diff_Lun_A_Sab',
+    @freq_type = 8,             -- 8 = Semanal
+    @freq_interval = 126,       -- 126 = Lunes a Sábado
+    @active_start_time = 020000;-- 2:00:00 AM
+
+-- 4. Asignar al servidor local
+EXEC sp_add_jobserver @job_name = N'Backup_Diferencial_CountingFriend';
+GO
+
+-- 1. Crear el Job
+EXEC sp_add_job @job_name = N'Backup_Log_CountingFriend';
+
+-- 2. Definir el comando de backup (con nombre dinámico por hora)
+EXEC sp_add_jobstep 
+    @job_name = N'Backup_Log_CountingFriend',
+    @step_name = N'Hacer Log Backup',
+    @command = N'DECLARE @ruta NVARCHAR(255) = ''C:\Backups\CountingFriend\Log_'' + FORMAT(GETDATE(), ''yyyyMMdd_HHmm'') + ''.trn'';
+                 BACKUP LOG CountingFriend_BD TO DISK = @ruta;';
+
+-- 3. Asignar el horario (Cada 1 hora, de 6 AM a 8 PM)
+EXEC sp_add_jobschedule 
+    @job_name = N'Backup_Log_CountingFriend',
+    @name = N'Horario_Log_Cada_Hora',
+    @freq_type = 4,             -- 4 = Diario
+    @freq_interval = 1,         -- Todos los días
+    @freq_subday_type = 8,      -- 8 = Horas
+    @freq_subday_interval = 1,  -- Cada 1 hora
+    @active_start_time = 060000,-- 6:00:00 AM
+    @active_end_time = 200000;  -- 8:00:00 PM
+
+-- 4. Asignar al servidor local
+EXEC sp_add_jobserver @job_name = N'Backup_Log_CountingFriend';
+GO
