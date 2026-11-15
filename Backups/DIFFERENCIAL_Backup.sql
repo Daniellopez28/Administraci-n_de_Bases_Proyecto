@@ -16,7 +16,7 @@ EXEC sp_add_jobschedule
     @job_name = N'DIFFERENCIAL_Backup',
     @name = N'Horario_Diff_2AM',
     @freq_type = 8,             
-    @freq_interval = 126,       -- Lunes a Sábado
+    @freq_interval = 127,       -- Lunes a Sábado
     @active_start_time = 020000;
 
 -- 4. Segundo Horario (Lunes a Sábado a las 12:00 PM)
@@ -24,8 +24,16 @@ EXEC sp_add_jobschedule
     @job_name = N'DIFFERENCIAL_Backup',
     @name = N'Horario_Diff_12PM',
     @freq_type = 8,             
-    @freq_interval = 126,       
+    @freq_interval = 127,       
     @active_start_time = 120000;
+
+--tercer Horario (Lunes a Sábado a las 6:00 PM)
+EXEC sp_add_jobschedule 
+    @job_name = N'DIFFERENCIAL_Backup',
+    @name = N'Horario_Diff_6PM',
+    @freq_type = 8,             
+    @freq_interval = 127,       
+    @active_start_time = 180000;
 
 -- 5. Asignar al servidor
 EXEC sp_add_jobserver @job_name = N'DIFFERENCIAL_Backup';
