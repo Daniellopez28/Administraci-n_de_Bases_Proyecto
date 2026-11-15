@@ -9,7 +9,7 @@ EXEC sp_add_jobstep
     @job_name = N'FULL_Backup',
     @step_name = N'Hacer Full Backup',
     @command = N'BACKUP DATABASE [CountingFriend_BD] TO DISK = N''/var/opt/mssql/data/CountingFriend_FULL.bak'' 
-    WITH NOFORMAT, INIT, NAME = N''CountingFriend_BD-Completa Base de datos Copia de seguridad'', SKIP, NOREWIND, NOUNLOAD, STATS = 10;';
+    WITH NOFORMAT, NOINIT, NAME = N''CountingFriend_BD-Completa Base de datos Copia de seguridad'', SKIP, NOREWIND, NOUNLOAD, STATS = 10;';
 
 -- 3. Asignar el horario (Solo los Lunes, Miercoles y viernes a las 1:00 AM)
 EXEC sp_add_jobschedule 

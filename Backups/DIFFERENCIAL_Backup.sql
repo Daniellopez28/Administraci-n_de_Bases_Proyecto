@@ -9,7 +9,7 @@ EXEC sp_add_jobstep
     @job_name = N'DIFFERENCIAL_Backup',
     @step_name = N'Hacer Diff Backup',
     @command = N'BACKUP DATABASE [CountingFriend_BD] TO DISK = N''/var/opt/mssql/data/CountingFriend_DIFF.bak'' 
-     WITH DIFFERENTIAL, NOFORMAT, INIT, NAME = N''CountingFriend_BD-Diferencial'', SKIP, NOREWIND, NOUNLOAD, STATS = 10;';
+     WITH DIFFERENTIAL, NOFORMAT, NOINIT, NAME = N''CountingFriend_BD-Diferencial'', SKIP, NOREWIND, NOUNLOAD, STATS = 10;';
 
 -- 3. Primer Horario (Lunes a Sábado a las 2:00 AM)
 EXEC sp_add_jobschedule 
