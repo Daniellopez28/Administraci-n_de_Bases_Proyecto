@@ -727,27 +727,3 @@ end catch
 
 revert;
 go
-
---Creación de backups
---Rodrigo------------------------------------------
-
---Creamos un job para hacer el backup completo de la base de datos CountingFriend_BD
-EXEC sp_add_job @job_name = N'Backup_Completo_CountingFriend';
-
---Agregamos un paso al job para hacer el backup completo de la base de datos
-EXEC sp_add_jobstep 
-    @job_name = N'Backup_Completo_CountingFriend',
-    @step_name = N'Hacer Full Backup',
-    @command = N'BACKUP DATABASE CountingFriend_BD TO DISK = ''C:\Backups\CountingFriend\Full.bak'' WITH FORMAT, INIT;';
-
---Agregamos un horario para que se ejecute el backup completo todos los domingos a las 2:00 AM
-EXEC sp_add_jobschedule 
-    @job_name = N'Backup_Completo_CountingFriend',
-    @name = N'Horario_Full_Domingos',
-    @freq_type = 8,             -- 8 = Semanal
-    @freq_interval = 1,         -- 1 = Domingo
-    @active_start_time = 020000;-- 2:00:00 AM (en hora (HHMMSS))
-
---Agregamos el job al servidor
-EXEC sp_add_jobserver @job_name = N'Backup_Completo_CountingFriend';
-GO
