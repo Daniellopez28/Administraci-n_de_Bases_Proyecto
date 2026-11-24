@@ -1,7 +1,34 @@
 -- ============================================================
--- POBLACIÓN MANUAL DE LA BASE DE DATOS (100 registros por tabla)
+-- Datos de demostración. Ejecutar una sola vez sobre una base vacía.
 -- Datos variados, sin patrón lineal, respetando CHECK / FK / UNIQUE
 -- ============================================================
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET ARITHABORT ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET NUMERIC_ROUNDABORT OFF;
+GO
+
+SET XACT_ABORT ON;
+
+IF EXISTS (SELECT 1 FROM dbo.Usuario)
+   OR EXISTS (SELECT 1 FROM dbo.MicroEmpresa)
+   OR EXISTS (SELECT 1 FROM dbo.CatalogoCuentas)
+   OR EXISTS (SELECT 1 FROM dbo.Persona_Comun)
+   OR EXISTS (SELECT 1 FROM dbo.Usuario_MicroEmpresa)
+   OR EXISTS (SELECT 1 FROM dbo.Cuenta)
+   OR EXISTS (SELECT 1 FROM dbo.Balance_General)
+   OR EXISTS (SELECT 1 FROM dbo.Balance_Cuenta)
+   OR EXISTS (SELECT 1 FROM dbo.Asiento_Contable)
+   OR EXISTS (SELECT 1 FROM dbo.Movimiento_Asiento)
+BEGIN
+    ;THROW 51000, 'La base no está vacía; no se aplicó la población de demostración.', 1;
+END;
+
+BEGIN TRY
+BEGIN TRANSACTION;
 
 -- 1. USUARIO (100 registros, correos únicos, contraseñas no vacías)
 INSERT INTO dbo.Usuario (nombre, correo, contrasena) VALUES
@@ -103,8 +130,12 @@ INSERT INTO dbo.Usuario (nombre, correo, contrasena) VALUES
 ('Jazmín Arévalo','jazmin.arevalo@mail.com','$2a$10$Or6yZe9aBd4tH0pK'),
 ('Kleber Zambrano','kleber.zambrano@mail.com','$2a$10$Ps7zAf0bCe5uI1qL'),
 ('Lina Burbano','lina.burbano@mail.com','$2a$10$Qt8aBg1cDf6vJ2rM'),
-('Marco Tulcán','marco.tulcan@mail.com','$2a$10$Ru9bCh2dEg7wK3sN');
+('Marco Tulcán','marco.tulcan@mail.com','$2a$10$Ru9bCh2dEg7wK3sN'),
+('Lucía Quintero','lucia.quintero@mail.com','!RESET_REQUIRED!');
 -- 100 filas insertadas
+
+-- Cuentas de demostración deshabilitadas: reemplazar por hashes reales desde la aplicación.
+UPDATE dbo.Usuario SET contrasena = '!RESET_REQUIRED!';
 
 -- 2. PERSONA_COMUN (subtipos de usuario, 50 registros: ids 1..50)
 INSERT INTO dbo.Persona_Comun (id_usuario) VALUES
@@ -553,6 +584,8 @@ INSERT INTO dbo.Balance_General (fecha_inicio, fecha_fin, total_activo, total_pa
 ('2025-03-01','2025-03-31',10510.60,4420.50,6090.10,9,99),
 ('2025-04-01','2025-04-30',11280.20,4630.20,6650.00,10,100);
 -- 100 filas insertadas
+UPDATE dbo.Balance_General
+SET total_patrimonio = total_activo - total_pasivo;
 
 -- 8. BALANCE_CUENTA (100 registros; id_balance 1..100, id_balance_cuenta = 1)
 INSERT INTO dbo.Balance_Cuenta (id_balance, id_balance_cuenta, monto, id_cuenta) VALUES
@@ -576,7 +609,19 @@ INSERT INTO dbo.Balance_Cuenta (id_balance, id_balance_cuenta, monto, id_cuenta)
 (86,1,1898.40,86),(87,1,1971.20,87),(88,1,2048.60,88),(89,1,2121.30,89),(90,1,2198.50,90),
 (91,1,2271.80,91),(92,1,2348.20,92),(93,1,2411.60,93),(94,1,2488.40,94),(95,1,2561.20,95),
 (96,1,2638.50,96),(97,1,910.20,97),(98,1,981.40,98),(99,1,1051.60,99),(100,1,1128.20,100);
--- 100 filas insertadas
+-- Los detalles contables deben coincidir con los totales del encabezado.
+DELETE FROM dbo.Balance_Cuenta;
+INSERT INTO dbo.Balance_Cuenta (id_balance, id_balance_cuenta, monto, id_cuenta)
+SELECT id_balance, 1, total_activo, (SELECT id_cuenta FROM dbo.Cuenta WHERE codigo = '1001')
+FROM dbo.Balance_General;
+INSERT INTO dbo.Balance_Cuenta (id_balance, id_balance_cuenta, monto, id_cuenta)
+SELECT id_balance, 2, total_pasivo, (SELECT id_cuenta FROM dbo.Cuenta WHERE codigo = '2001')
+FROM dbo.Balance_General;
+INSERT INTO dbo.Balance_Cuenta (id_balance, id_balance_cuenta, monto, id_cuenta)
+SELECT id_balance, 3, total_patrimonio, (SELECT id_cuenta FROM dbo.Cuenta WHERE codigo = '3001')
+FROM dbo.Balance_General;
+UPDATE dbo.Balance_General SET estado = 'Contabilizado';
+-- 300 filas (Activo, Pasivo y Patrimonio para cada balance)
 
 -- 9. ASIENTO_CONTABLE (100 registros; numero único, fechas variadas)
 INSERT INTO dbo.Asiento_Contable (numero, fecha, glosa, total_debe, total_haber, id_usuario, id_microempresa, id_balance) VALUES
@@ -784,7 +829,8 @@ INSERT INTO dbo.Movimiento_Asiento (id_asiento, id_movimiento, tipo, monto, id_c
 (98,1,'Debe',1170.00,99),(98,2,'Haber',1170.00,2),
 (99,1,'Debe',990.60,3),(99,2,'Haber',990.60,63),
 (100,1,'Debe',420.00,95),(100,2,'Haber',420.00,2);
--- 100 filas insertadas
+-- 200 filas: un movimiento Debe y uno Haber por cada uno de los 100 asientos.
+UPDATE dbo.Asiento_Contable SET estado = 'Contabilizado';
 
 -- Verificación final de conteos
 SELECT 'Usuario' AS tabla, COUNT(*) AS filas FROM dbo.Usuario
@@ -797,4 +843,17 @@ UNION ALL SELECT 'Balance_General', COUNT(*) FROM dbo.Balance_General
 UNION ALL SELECT 'Balance_Cuenta', COUNT(*) FROM dbo.Balance_Cuenta
 UNION ALL SELECT 'Asiento_Contable', COUNT(*) FROM dbo.Asiento_Contable
 UNION ALL SELECT 'Movimiento_Asiento', COUNT(*) FROM dbo.Movimiento_Asiento;
+
+COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    DBCC CHECKIDENT ('dbo.Usuario', RESEED, 0);
+    DBCC CHECKIDENT ('dbo.MicroEmpresa', RESEED, 0);
+    DBCC CHECKIDENT ('dbo.Usuario_MicroEmpresa', RESEED, 0);
+    DBCC CHECKIDENT ('dbo.Cuenta', RESEED, 0);
+    DBCC CHECKIDENT ('dbo.Balance_General', RESEED, 0);
+    DBCC CHECKIDENT ('dbo.Asiento_Contable', RESEED, 0);
+    THROW;
+END CATCH;
 GO

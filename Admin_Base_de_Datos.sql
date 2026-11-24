@@ -1,8 +1,20 @@
-Create database CountingFriend_BD;
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET ARITHABORT ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET NUMERIC_ROUNDABORT OFF;
+GO
+
+CREATE DATABASE CountingFriend_BD;
 Go
 
-use CountingFriend_BD;
-go
+ALTER DATABASE CountingFriend_BD SET RECOVERY FULL;
+GO
+
+USE CountingFriend_BD;
+GO
 
 --Daniel
 --Entidades fuertes o padres pues
@@ -19,7 +31,7 @@ create table MicroEmpresa(
 id_microempresa int identity(1,1) primary key,
 nombre varchar(150) not null,
 --Regla que si o si la empresa es una natural o juridica
-tipo varchar(20) check (tipo in ('Natural', 'Juridica')),
+tipo varchar(20) not null check (tipo in ('Natural', 'Juridica')),
 nit varchar(20) unique
 );
 --tabla catalogocuentas
@@ -40,9 +52,10 @@ on update cascade
 
 --Tabla usuario microempresa (subtipo de ususairo + fk de empresa)
 create table Usuario_MicroEmpresa(
-id_usuario int primary key,
+id_usuario_microempresa int identity(1,1) primary key,
+id_usuario int not null,
 cargo varchar(100),
-id_microempresa int,
+id_microempresa int null,
 foreign key (id_usuario) references Usuario(id_usuario)
 on delete cascade --si alguien ejecuta eliminr usuario 
 --sql borrara su fila en persona_comun o usuario_microempresa
@@ -52,28 +65,50 @@ on delete set null --si se borra la empresa, el usuario no se borra
 --solo se queda sin empresa 
 );
 
+CREATE UNIQUE INDEX UX_UsuarioMicro_Empresa
+    ON dbo.Usuario_MicroEmpresa(id_usuario, id_microempresa)
+    WHERE id_microempresa IS NOT NULL;
+
 --Tabla CUENTA (Depende de CatalogoCuentas)
 create table Cuenta(
 id_cuenta int identity(1,1) primary key,
-codigo varchar(20) unique not null,
+codigo varchar(20) not null,
 nombre varchar(100) not null,
-tipo varchar(50) check (tipo in ('Activo','Pasivo','Patrimonio','Ingreso','Gasto')),
-naturaleza varchar(20) check (naturaleza in ('Deudor', 'Acreedor')),
-id_catalogo int,
+tipo varchar(50) not null check (tipo in ('Activo','Pasivo','Patrimonio','Ingreso','Gasto')),
+naturaleza varchar(20) not null check (naturaleza in ('Deudor', 'Acreedor')),
+id_catalogo int not null,
+id_usuario int null,
+id_microempresa int null,
+constraint CK_Cuenta_Propietario check (id_usuario is null or id_microempresa is null),
 foreign key (id_catalogo) references CatalogoCuentas(id_catalogo)
-on update cascade
+on update cascade,
+foreign key (id_usuario) references Usuario(id_usuario),
+foreign key (id_microempresa) references MicroEmpresa(id_microempresa)
 );
+
+CREATE UNIQUE INDEX UX_Cuenta_CodigoGlobal
+    ON dbo.Cuenta(codigo)
+    WHERE id_usuario IS NULL AND id_microempresa IS NULL;
+CREATE UNIQUE INDEX UX_Cuenta_CodigoUsuario
+    ON dbo.Cuenta(id_usuario, codigo)
+    WHERE id_usuario IS NOT NULL;
+CREATE UNIQUE INDEX UX_Cuenta_CodigoMicroempresa
+    ON dbo.Cuenta(id_microempresa, codigo)
+    WHERE id_microempresa IS NOT NULL;
 
 --Tabla Balance General(Deepende de Usuario y MicroEmpresa)
 create table Balance_General(
 id_balance int identity(1,1) primary key,
 fecha_inicio date not null,
 fecha_fin date not null,
-total_activo decimal(12,2) default 0.00,
-total_pasivo decimal(12,2) default 0.00,
-total_patrimonio decimal(12,2) default 0.00,
-id_usuario int,
+total_activo decimal(12,2) not null default 0.00 check (total_activo >= 0),
+total_pasivo decimal(12,2) not null default 0.00 check (total_pasivo >= 0),
+total_patrimonio decimal(12,2) not null default 0.00 check (total_patrimonio >= 0),
+id_usuario int not null,
 id_microempresa int,
+estado varchar(15) not null default 'Borrador'
+    check (estado in ('Borrador', 'Contabilizado')),
+constraint CK_BalanceGeneral_Fechas check (fecha_fin >= fecha_inicio),
 foreign key (id_usuario) references Usuario(id_usuario)
 on delete cascade,
 foreign key(id_microempresa) references MicroEmpresa(id_microempresa)
@@ -86,11 +121,13 @@ id_asiento int identity(1,1) primary key,
 numero int unique not null, --el numero de asientos no se puede repetir 
 fecha date not null,
 glosa varchar(300),
-total_debe decimal(12,2) default 0.00,
-total_haber decimal(12,2) default 0.00,
-id_usuario int,
+total_debe decimal(12,2) not null default 0.00 check (total_debe >= 0),
+total_haber decimal(12,2) not null default 0.00 check (total_haber >= 0),
+id_usuario int not null,
 id_microempresa int,
 id_balance int, 
+estado varchar(15) not null default 'Borrador'
+    check (estado in ('Borrador', 'Contabilizado')),
 foreign key(id_usuario) references Usuario(id_usuario)
 on delete cascade,
 foreign key (id_microempresa) references MicroEmpresa(id_microempresa)
@@ -106,9 +143,9 @@ on delete no action
 create table Movimiento_Asiento(
 id_asiento int not null,
 id_movimiento int not null,
-tipo varchar(10) check(tipo in ('Debe', 'Haber')),
+tipo varchar(10) not null check(tipo in ('Debe', 'Haber')),
 monto decimal(12, 2) not null check(monto > 0),
-id_cuenta int,
+id_cuenta int not null,
 
 --pk compuesta de el asiento + su numero de linea interno
 primary key (id_asiento, id_movimiento),
@@ -125,8 +162,8 @@ on delete no action
 create table Balance_Cuenta(
 id_balance int not null,
 id_balance_cuenta int not null,
-monto decimal(12,2) not null,
-id_cuenta int,
+monto decimal(12,2) not null check (monto >= 0),
+id_cuenta int not null,
 
 --pk compuesta por el balance+ numero de linea interno
 primary key (id_balance, id_balance_cuenta),
@@ -158,10 +195,19 @@ CREATE PROCEDURE usp_RegistrarUsuario
 as
 begin
 set nocount on; --Pa mejorar el rendimiento
+set xact_abort on;
+
+if nullif(ltrim(rtrim(@p_nombre)), '') is null
+   or nullif(ltrim(rtrim(@p_correo)), '') is null
+   or nullif(ltrim(rtrim(@p_contrasena)), '') is null
+   or @p_tipo is null or @p_tipo not in ('Comun', 'Microempresa')
+    throw 50001, 'Datos de registro incompletos o tipo de usuario inválido.', 1;
+
 begin try
+begin transaction;
 --1. Insertamos en la tabla principal
 insert into Usuario(nombre, correo, contrasena)
-values(@p_nombre, @p_correo, @p_contrasena);
+values(ltrim(rtrim(@p_nombre)), lower(ltrim(rtrim(@p_correo))), @p_contrasena);
 
 --2. Obtenemos el id que la base de datos acaba de generar
 declare @nuevo_id int;
@@ -182,13 +228,116 @@ insert into Usuario_MicroEmpresa(id_usuario,cargo,id_microempresa)
 values (@nuevo_id, NULL, NULL);
 end
 
-print 'Usuario registrado correctamente con ID: '+ CAST(@nuevo_id as varchar);
+commit transaction;
+select @nuevo_id as id_usuario;
 end try
 begin catch
-print 'Erro al registrar usuario: '+ ERROR_MESSAGE();
+if @@trancount > 0 rollback transaction;
+throw;
 end catch
 end;
 go
+
+CREATE PROCEDURE dbo.usp_ObtenerCredencialUsuario
+    @p_correo varchar(150)
+WITH EXECUTE AS OWNER
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT id_usuario, contrasena AS hash_contrasena
+    FROM dbo.Usuario
+    WHERE correo = LOWER(LTRIM(RTRIM(@p_correo)));
+END;
+GO
+
+CREATE PROCEDURE dbo.usp_CrearMicroEmpresa
+    @p_nombre varchar(150),
+    @p_tipo varchar(20),
+    @p_nit varchar(20) = NULL,
+    @p_id_microempresa_creada int OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @id_usuario int = TRY_CONVERT(int, SESSION_CONTEXT(N'id_usuario'));
+    IF @id_usuario IS NULL
+        THROW 50020, 'Debe establecerse el usuario autenticado en la sesión.', 1;
+    IF NULLIF(LTRIM(RTRIM(@p_nombre)), '') IS NULL
+        THROW 50021, 'El nombre de la microempresa es obligatorio.', 1;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        INSERT INTO dbo.MicroEmpresa (nombre, tipo, nit)
+        VALUES (LTRIM(RTRIM(@p_nombre)), @p_tipo, NULLIF(LTRIM(RTRIM(@p_nit)), ''));
+
+        SET @p_id_microempresa_creada = CONVERT(int, SCOPE_IDENTITY());
+        INSERT INTO dbo.Usuario_MicroEmpresa (id_usuario, cargo, id_microempresa)
+        VALUES (@id_usuario, N'Propietario', @p_id_microempresa_creada);
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END;
+GO
+
+CREATE PROCEDURE dbo.usp_CrearAsiento
+    @p_numero int,
+    @p_fecha date,
+    @p_glosa varchar(300) = NULL,
+    @p_id_microempresa int = NULL,
+    @p_id_balance int = NULL,
+    @p_id_asiento_creado int OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @id_usuario int = TRY_CONVERT(int, SESSION_CONTEXT(N'id_usuario'));
+    IF @id_usuario IS NULL
+        THROW 50002, 'Debe establecerse el usuario autenticado en la sesión.', 1;
+
+    IF @p_numero IS NULL OR @p_fecha IS NULL
+        THROW 50006, 'El número y la fecha del asiento son obligatorios.', 1;
+
+    IF @p_id_microempresa IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1
+           FROM dbo.Usuario_MicroEmpresa
+           WHERE id_usuario = @id_usuario
+             AND id_microempresa = @p_id_microempresa
+       )
+        THROW 50007, 'El usuario no pertenece a la microempresa indicada.', 1;
+
+    IF @p_id_balance IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1
+           FROM dbo.Balance_General
+           WHERE id_balance = @p_id_balance
+             AND id_usuario = @id_usuario
+             AND (id_microempresa = @p_id_microempresa
+                  OR (id_microempresa IS NULL AND @p_id_microempresa IS NULL))
+       )
+        THROW 50008, 'El balance no pertenece al usuario y empresa indicados.', 1;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        INSERT INTO dbo.Asiento_Contable
+            (numero, fecha, glosa, id_usuario, id_microempresa, id_balance)
+        VALUES
+            (@p_numero, @p_fecha, @p_glosa, @id_usuario, @p_id_microempresa, @p_id_balance);
+        SET @p_id_asiento_creado = CONVERT(int, SCOPE_IDENTITY());
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END;
+GO
 
 --2. Insertar MovimientoAsiento
 create procedure usp_InsertarMovimientoAsiento
@@ -200,18 +349,41 @@ create procedure usp_InsertarMovimientoAsiento
 as
 begin 
 set nocount on;
-begin try
---1. validamos que el monto sea positivo
-if @p_monto <= 0
-begin
-  throw 50003, 'El monto del movimiento debe ser mayor a cero', 1;
-end
+set xact_abort on;
 
+if @p_tipo is null or @p_tipo not in ('Debe', 'Haber')
+   or @p_monto is null or @p_monto <= 0
+    throw 50003, 'El tipo debe ser Debe o Haber y el monto debe ser mayor a cero.', 1;
+
+begin try
+begin transaction;
 --2. Generamos el número de movimiento consecutivo para este asiento
 declare @nuevo_movimiento int;
---buscamos el ultimo movimiento de este asiento. Si no hay, empezamos en 1
+declare @estado_asiento varchar(15);
+declare @id_microempresa_asiento int;
+declare @id_usuario int = TRY_CONVERT(int, SESSION_CONTEXT(N'id_usuario'));
+select @estado_asiento = estado, @id_microempresa_asiento = id_microempresa
+from dbo.Asiento_Contable with (UPDLOCK, HOLDLOCK)
+where id_asiento = @p_id_asiento and id_usuario = @id_usuario;
+
+if @estado_asiento is null
+    throw 50009, 'El asiento no existe o no pertenece al usuario autenticado.', 1;
+if @estado_asiento <> 'Borrador'
+    throw 50010, 'No se pueden agregar movimientos a un asiento contabilizado.', 1;
+if not exists (
+    select 1
+    from dbo.Cuenta c
+    where c.id_cuenta = @p_id_cuenta
+      and (
+          (c.id_usuario is null and c.id_microempresa is null)
+          or c.id_usuario = @id_usuario
+          or c.id_microempresa = @id_microempresa_asiento
+      )
+)
+    throw 50011, 'La cuenta no es accesible para este asiento.', 1;
+
 select @nuevo_movimiento = ISNULL(MAX(id_movimiento),0)+1
-from Movimiento_Asiento
+from Movimiento_Asiento with (UPDLOCK, HOLDLOCK)
 where id_asiento = @p_id_asiento;
 
 --3. Insertamos la linea (El debe o haber)
@@ -227,15 +399,56 @@ total_haber = (select ISNULL(SUM(monto),0) from Movimiento_Asiento
 where id_asiento = @p_id_asiento and tipo = 'Haber')
 where id_asiento = @p_id_asiento;
 
-print  'Movimiento insertado correctamente.';
+commit transaction;
 
 end try
 begin catch
-print 'Error al insertar movimiento: '+ ERROR_MESSAGE();
+if @@trancount > 0 rollback transaction;
+throw;
 end catch
 end;
 go
 
+CREATE PROCEDURE dbo.usp_ContabilizarAsiento
+    @p_id_asiento int
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @id_usuario int = TRY_CONVERT(int, SESSION_CONTEXT(N'id_usuario'));
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM dbo.Asiento_Contable WITH (UPDLOCK, HOLDLOCK)
+            WHERE id_asiento = @p_id_asiento
+              AND id_usuario = @id_usuario
+              AND estado = 'Borrador'
+        )
+            THROW 50012, 'El asiento no existe, no es editable o no pertenece al usuario.', 1;
+
+        IF NOT EXISTS (SELECT 1 FROM dbo.Movimiento_Asiento WHERE id_asiento = @p_id_asiento)
+           OR EXISTS (
+               SELECT 1 FROM dbo.Asiento_Contable
+               WHERE id_asiento = @p_id_asiento
+                 AND (total_debe <= 0 OR total_debe <> total_haber)
+           )
+            THROW 50013, 'El asiento debe tener movimientos y estar cuadrado antes de contabilizar.', 1;
+
+        UPDATE dbo.Asiento_Contable
+        SET estado = 'Contabilizado'
+        WHERE id_asiento = @p_id_asiento;
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END;
+GO
 
 --Procedimiento para generar el balance general
 --1. Procedimiento para crear el encabezado del Balance:
@@ -248,8 +461,22 @@ create procedure usp_CrearBalanceGeneral
 as
 begin
 set nocount on;
+set xact_abort on;
+
+if @p_fecha_inicio is null or @p_fecha_fin is null or @p_fecha_fin < @p_fecha_inicio
+    throw 50004, 'El período del balance no es válido.', 1;
+if @p_id_usuario is null
+   or @p_id_usuario <> TRY_CONVERT(int, SESSION_CONTEXT(N'id_usuario'))
+    throw 50016, 'El balance debe pertenecer al usuario autenticado.', 1;
+if @p_id_microempresa is not null
+   and not exists (
+       select 1 from dbo.Usuario_MicroEmpresa
+       where id_usuario = @p_id_usuario and id_microempresa = @p_id_microempresa
+   )
+    throw 50017, 'El usuario no pertenece a la microempresa indicada.', 1;
 
 begin try
+begin transaction;
 --creamos el balance contotales en 0
 insert into Balance_General(fecha_inicio,fecha_fin,id_usuario,id_microempresa,
 total_activo,total_pasivo,total_patrimonio)
@@ -257,13 +484,50 @@ values(@p_fecha_inicio, @p_fecha_fin, @p_id_usuario, @p_id_microempresa, 0,0,0);
 
 --devolvemos el id generado a JAVA
 set @p_id_balance_creado = SCOPE_IDENTITY();
-print 'Balance Gneral creado con ID: '+ CAST(@p_id_balance_creado as varchar);
+commit transaction;
 end try
 begin catch
-print 'Error al crear balance: '+ ERROR_MESSAGE();
+if @@trancount > 0 rollback transaction;
+throw;
 end catch
 end;
 go
+
+CREATE PROCEDURE dbo.usp_CrearCuenta
+    @p_codigo varchar(20),
+    @p_nombre varchar(100),
+    @p_tipo varchar(50),
+    @p_naturaleza varchar(20),
+    @p_id_catalogo int,
+    @p_id_microempresa int = NULL,
+    @p_id_cuenta_creada int OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @id_usuario int = TRY_CONVERT(int, SESSION_CONTEXT(N'id_usuario'));
+    IF @id_usuario IS NULL
+        THROW 50014, 'Debe establecerse el usuario autenticado en la sesión.', 1;
+
+    IF @p_id_microempresa IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1
+           FROM dbo.Usuario_MicroEmpresa
+           WHERE id_usuario = @id_usuario
+             AND id_microempresa = @p_id_microempresa
+       )
+        THROW 50015, 'El usuario no pertenece a la microempresa indicada.', 1;
+
+    INSERT INTO dbo.Cuenta
+        (codigo, nombre, tipo, naturaleza, id_catalogo, id_usuario, id_microempresa)
+    VALUES
+        (@p_codigo, @p_nombre, @p_tipo, @p_naturaleza, @p_id_catalogo,
+         CASE WHEN @p_id_microempresa IS NULL THEN @id_usuario END,
+         @p_id_microempresa);
+    SET @p_id_cuenta_creada = CONVERT(int, SCOPE_IDENTITY());
+END;
+GO
 
 --2. Procedimiento para agregar una cuenta a ese Balance:
 create procedure usp_AgregarCuentaBalance
@@ -273,12 +537,42 @@ create procedure usp_AgregarCuentaBalance
 as
 begin
 set nocount on;
+set xact_abort on;
+
+if @p_monto is null or @p_monto < 0
+    throw 50005, 'El monto no puede ser negativo.', 1;
 
 begin try
+begin transaction;
+declare @id_usuario int = TRY_CONVERT(int, SESSION_CONTEXT(N'id_usuario'));
+declare @id_microempresa_balance int;
+declare @estado_balance varchar(15);
+select @id_microempresa_balance = id_microempresa
+     , @estado_balance = estado
+from dbo.Balance_General with (UPDLOCK, HOLDLOCK)
+where id_balance = @p_id_balance and id_usuario = @id_usuario;
+
+if @@rowcount = 0
+    throw 50018, 'El balance no existe o no pertenece al usuario autenticado.', 1;
+if @estado_balance <> 'Borrador'
+    throw 50022, 'No se pueden modificar cuentas de un balance contabilizado.', 1;
+
+if not exists (
+    select 1
+    from dbo.Cuenta c
+    where c.id_cuenta = @p_id_cuenta
+      and (
+          (c.id_usuario is null and c.id_microempresa is null)
+          or c.id_usuario = @id_usuario
+          or c.id_microempresa = @id_microempresa_balance
+      )
+)
+    throw 50019, 'La cuenta no es accesible para este balance.', 1;
+
 --generamos el numero de linea (1, 2, 3...)
 declare @nuevo_id_linea int;
 select @nuevo_id_linea = ISNULL(MAX(id_balance_cuenta), 0)+1
-from Balance_cuenta
+from Balance_cuenta with (UPDLOCK, HOLDLOCK)
 where id_balance = @p_id_balance;
 
 --insertamos la cuenta en el balance
@@ -298,60 +592,119 @@ total_activo = ISNULL((select SUM(bc.monto) from Balance_Cuenta bc join Cuenta c
  ='Patrimonio'),0)
  where id_balance = @p_id_balance;
 
- print 'Cuenta agregada al balance correctamente. ';
+ commit transaction;
  end try
  begin catch
- print 'Error al agregar cuenta: '+ ERROR_MESSAGE();
+ if @@trancount > 0 rollback transaction;
+ throw;
  end catch
  end;
  go
 
+CREATE PROCEDURE dbo.usp_ContabilizarBalance
+    @p_id_balance int
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @id_usuario int = TRY_CONVERT(int, SESSION_CONTEXT(N'id_usuario'));
+    DECLARE @estado varchar(15);
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        SELECT @estado = estado
+        FROM dbo.Balance_General WITH (UPDLOCK, HOLDLOCK)
+        WHERE id_balance = @p_id_balance
+          AND id_usuario = @id_usuario;
+
+        IF @@ROWCOUNT = 0 OR @estado <> 'Borrador'
+            THROW 50023, 'El balance no existe, ya está contabilizado o no pertenece al usuario.', 1;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM dbo.Balance_Cuenta WHERE id_balance = @p_id_balance
+        )
+           OR EXISTS (
+               SELECT 1
+               FROM dbo.Balance_General b
+               OUTER APPLY (
+                   SELECT
+                       SUM(CASE WHEN c.tipo = 'Activo' THEN bc.monto ELSE 0 END) AS total_activo,
+                       SUM(CASE WHEN c.tipo = 'Pasivo' THEN bc.monto ELSE 0 END) AS total_pasivo,
+                       SUM(CASE WHEN c.tipo = 'Patrimonio' THEN bc.monto ELSE 0 END) AS total_patrimonio
+                   FROM dbo.Balance_Cuenta bc
+                   JOIN dbo.Cuenta c ON c.id_cuenta = bc.id_cuenta
+                   WHERE bc.id_balance = b.id_balance
+               ) d
+               WHERE b.id_balance = @p_id_balance
+                 AND (
+                     ISNULL(d.total_activo, 0) <> b.total_activo
+                     OR ISNULL(d.total_pasivo, 0) <> b.total_pasivo
+                     OR ISNULL(d.total_patrimonio, 0) <> b.total_patrimonio
+                     OR b.total_activo <> b.total_pasivo + b.total_patrimonio
+                 )
+           )
+            THROW 50024, 'El balance debe tener detalles y cumplir Activo = Pasivo + Patrimonio.', 1;
+
+        UPDATE dbo.Balance_General
+        SET estado = 'Contabilizado'
+        WHERE id_balance = @p_id_balance;
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END;
+GO
+
 --Quite el view de aqui para dejaro en un mismo script (Gael)
 --Ricardo------------------------------------------
---Creacion de logins
-CREATE LOGIN login_admin  WITH PASSWORD = 'Admin1234!', --Creamos el usuario admin
----con el check_policy obligamos a que la contra cumpla con las directivas de seguridad
-CHECK_POLICY = ON, DEFAULT_DATABASE = CountingFriend_BD; --el default_database declara a que base de datos se conectara cada que ingrese
+-- Los usuarios quedan sin login para no guardar contraseñas en el repositorio.
+-- Vincularlos a logins de SQL Server solo durante el despliegue.
+CREATE USER usr_admin WITHOUT LOGIN;
+CREATE USER usr_app WITHOUT LOGIN;
+CREATE USER usr_auditor WITHOUT LOGIN;
 
-CREATE LOGIN login_app WITH PASSWORD = 'App1234!',
-CHECK_POLICY = ON, DEFAULT_DATABASE = CountingFriend_BD;
-
-CREATE LOGIN login_auditor WITH PASSWORD = 'Auditor1234',
-CHECK_POLICY = ON, DEFAULT_DATABASE = CountingFriend_BD;
-
---creados los login creamos los usuarios
-CREATE USER  usr_admin FOR LOGIN login_admin;
-CREATE USER usr_app FOR LOGIN login_app;
-CREATE USER usr_auditor FOR LOGIN login_auditor;
-
---Creamos los roles para los usuarios
 CREATE ROLE rol_administrador;
 CREATE ROLE rol_aplicacion;
 CREATE ROLE rol_auditor;
 
---implementamso a los usuarios a los roles creados
 ALTER ROLE rol_administrador ADD MEMBER usr_admin;
 ALTER ROLE rol_aplicacion ADD MEMBER usr_app;
 ALTER ROLE rol_auditor ADD MEMBER usr_auditor;
 
---Estructura de permisos para el administrador (leer, escribir, modificar, hacer respaldos)
+-- Administrador de la base de datos.
 ALTER ROLE db_datareader     ADD MEMBER rol_administrador;
 ALTER ROLE db_datawriter     ADD MEMBER rol_administrador;
 ALTER ROLE db_ddladmin       ADD MEMBER rol_administrador;
 ALTER ROLE db_backupoperator ADD MEMBER rol_administrador;
-GRANT EXECUTE ON SCHEMA::dbo TO rol_administrador; --Acceso a todos los datos, tablas y demas de dbo
+GRANT EXECUTE ON SCHEMA::dbo TO rol_administrador;
 
---Estructura de permisos para la aplicacion (leer, hacer insercciones, modificar y actualizar, ejecutar)
-GRANT SELECT ON SCHEMA::dbo TO rol_aplicacion;
+-- Aplicación: no conceder lectura indiscriminada del esquema ni de hashes.
+GRANT SELECT ON dbo.Usuario (id_usuario, nombre, correo) TO rol_aplicacion;
+DENY SELECT ON dbo.Usuario (contrasena) TO rol_aplicacion;
+GRANT SELECT ON dbo.CatalogoCuentas TO rol_aplicacion;
+GRANT SELECT ON dbo.Cuenta TO rol_aplicacion;
+GRANT SELECT ON dbo.Persona_Comun TO rol_aplicacion;
+GRANT SELECT ON dbo.Balance_General TO rol_aplicacion;
+GRANT SELECT ON dbo.Balance_Cuenta TO rol_aplicacion;
+GRANT SELECT ON dbo.Asiento_Contable TO rol_aplicacion;
+GRANT SELECT ON dbo.Movimiento_Asiento TO rol_aplicacion;
 GRANT EXECUTE ON dbo.usp_RegistrarUsuario         TO rol_aplicacion;
+GRANT EXECUTE ON dbo.usp_ObtenerCredencialUsuario TO rol_aplicacion;
+GRANT EXECUTE ON dbo.usp_CrearMicroEmpresa       TO rol_aplicacion;
+GRANT EXECUTE ON dbo.usp_CrearAsiento             TO rol_aplicacion;
 GRANT EXECUTE ON dbo.usp_InsertarMovimientoAsiento TO rol_aplicacion;
+GRANT EXECUTE ON dbo.usp_ContabilizarAsiento      TO rol_aplicacion;
 GRANT EXECUTE ON dbo.usp_CrearBalanceGeneral      TO rol_aplicacion;
 GRANT EXECUTE ON dbo.usp_AgregarCuentaBalance     TO rol_aplicacion;
--- No existe procedimiento para crear asientos ni empresas, por eso estos permisos directos:
-GRANT INSERT, UPDATE ON dbo.Asiento_Contable TO rol_aplicacion;
-GRANT INSERT, UPDATE ON dbo.MicroEmpresa     TO rol_aplicacion;
+GRANT EXECUTE ON dbo.usp_ContabilizarBalance      TO rol_aplicacion;
+GRANT EXECUTE ON dbo.usp_CrearCuenta              TO rol_aplicacion;
 
---Estructura de permisos de auditor (solo lectura)
+-- Auditor: lectura, sin datos de autenticación ni operaciones de escritura.
 GRANT SELECT ON SCHEMA::dbo TO rol_auditor;
 DENY SELECT ON dbo.Usuario (contrasena) TO rol_auditor;
 DENY INSERT, UPDATE, DELETE, EXECUTE ON SCHEMA::dbo TO rol_auditor;
@@ -367,7 +720,7 @@ WITH SCHEMABINDING
 AS
 RETURN
     SELECT 1 AS permitido
-    WHERE @id_usuario = CAST(SESSION_CONTEXT(N'id_usuario') AS INT)
+    WHERE @id_usuario = TRY_CONVERT(INT, SESSION_CONTEXT(N'id_usuario'))
        OR IS_MEMBER('rol_administrador') = 1
        OR IS_MEMBER('rol_auditor') = 1
        OR IS_MEMBER('db_owner') = 1;
@@ -381,7 +734,7 @@ RETURN
     SELECT 1 AS permitido
     FROM dbo.Asiento_Contable a
     WHERE a.id_asiento = @id_asiento
-      AND (a.id_usuario = CAST(SESSION_CONTEXT(N'id_usuario') AS INT)
+      AND (a.id_usuario = TRY_CONVERT(INT, SESSION_CONTEXT(N'id_usuario'))
            OR IS_MEMBER('rol_administrador') = 1
            OR IS_MEMBER('rol_auditor') = 1
            OR IS_MEMBER('db_owner') = 1);
@@ -395,13 +748,60 @@ RETURN
     SELECT 1 AS permitido
     FROM dbo.Balance_General b
     WHERE b.id_balance = @id_balance
-      AND (b.id_usuario = CAST(SESSION_CONTEXT(N'id_usuario') AS INT)
+      AND (b.id_usuario = TRY_CONVERT(INT, SESSION_CONTEXT(N'id_usuario'))
            OR IS_MEMBER('rol_administrador') = 1
            OR IS_MEMBER('rol_auditor') = 1
            OR IS_MEMBER('db_owner') = 1);
 GO
 
+CREATE FUNCTION Seguridad.fn_AccesoPorMicroempresa(@id_microempresa INT)
+RETURNS TABLE
+WITH SCHEMABINDING
+AS
+RETURN
+    SELECT 1 AS permitido
+    WHERE IS_MEMBER('rol_administrador') = 1
+       OR IS_MEMBER('rol_auditor') = 1
+       OR IS_MEMBER('db_owner') = 1
+       OR EXISTS (
+           SELECT 1
+           FROM dbo.Usuario_MicroEmpresa um
+           WHERE um.id_microempresa = @id_microempresa
+             AND um.id_usuario = TRY_CONVERT(INT, SESSION_CONTEXT(N'id_usuario'))
+       );
+GO
+
+CREATE FUNCTION Seguridad.fn_AccesoPorCuenta
+(
+    @id_usuario int,
+    @id_microempresa int
+)
+RETURNS TABLE
+WITH SCHEMABINDING
+AS
+RETURN
+    SELECT 1 AS permitido
+    WHERE (@id_usuario IS NULL AND @id_microempresa IS NULL)
+       OR @id_usuario = TRY_CONVERT(INT, SESSION_CONTEXT(N'id_usuario'))
+       OR EXISTS (
+           SELECT 1
+           FROM dbo.Usuario_MicroEmpresa um
+           WHERE um.id_usuario = TRY_CONVERT(INT, SESSION_CONTEXT(N'id_usuario'))
+             AND um.id_microempresa = @id_microempresa
+       )
+       OR IS_MEMBER('rol_administrador') = 1
+       OR IS_MEMBER('rol_auditor') = 1
+       OR IS_MEMBER('db_owner') = 1;
+GO
+
 CREATE SECURITY POLICY Seguridad.pol_AccesoPorUsuario
+    ADD FILTER PREDICATE Seguridad.fn_AccesoPorUsuario(id_usuario) ON dbo.Usuario,
+    ADD FILTER PREDICATE Seguridad.fn_AccesoPorUsuario(id_usuario) ON dbo.Persona_Comun,
+    ADD FILTER PREDICATE Seguridad.fn_AccesoPorUsuario(id_usuario) ON dbo.Usuario_MicroEmpresa,
+    ADD FILTER PREDICATE Seguridad.fn_AccesoPorMicroempresa(id_microempresa) ON dbo.MicroEmpresa,
+    ADD FILTER PREDICATE Seguridad.fn_AccesoPorCuenta(id_usuario, id_microempresa) ON dbo.Cuenta,
+    ADD BLOCK PREDICATE Seguridad.fn_AccesoPorCuenta(id_usuario, id_microempresa) ON dbo.Cuenta AFTER INSERT,
+    ADD BLOCK PREDICATE Seguridad.fn_AccesoPorCuenta(id_usuario, id_microempresa) ON dbo.Cuenta AFTER UPDATE,
     ADD FILTER PREDICATE Seguridad.fn_AccesoPorUsuario(id_usuario)   ON dbo.Asiento_Contable,
     ADD BLOCK  PREDICATE Seguridad.fn_AccesoPorUsuario(id_usuario)   ON dbo.Asiento_Contable AFTER INSERT,
     ADD BLOCK  PREDICATE Seguridad.fn_AccesoPorUsuario(id_usuario)   ON dbo.Asiento_Contable AFTER UPDATE,
@@ -415,85 +815,8 @@ CREATE SECURITY POLICY Seguridad.pol_AccesoPorUsuario
     WITH (STATE = ON);
 GO
 
---Pruebas de la seguridad implementada (suponen que los usuarios de prueba tienen id 1 y 2)
-
--- Prueba A: la app como usuario 1 ve solo sus asientos y no puede insertar a nombre del 2
-EXECUTE AS USER = 'usr_app';
-EXEC sp_set_session_context @key = N'id_usuario', @value = 1;
-SELECT COUNT(*) AS asientos_visibles_usuario1 FROM dbo.Asiento_Contable;      -- ~25 000
-BEGIN TRY
-    INSERT INTO dbo.Asiento_Contable(numero, fecha, glosa, id_usuario)
-    VALUES (900001, GETDATE(), 'Intento de insertar a nombre de otro', 2);
-    PRINT 'ERROR: debió bloquearse';
-END TRY
-BEGIN CATCH
-    PRINT 'Bloqueado correctamente: ' + ERROR_MESSAGE();
-END CATCH
--- Prueba B: sin contexto de usuario no se ve nada
-EXEC sp_set_session_context @key = N'id_usuario', @value = NULL;
-SELECT COUNT(*) AS asientos_visibles_sin_contexto FROM dbo.Asiento_Contable;  -- 0
--- Prueba C: la app no tiene DELETE
-BEGIN TRY
-    DELETE FROM dbo.Asiento_Contable WHERE id_asiento = 1;
-    PRINT 'ERROR: debió denegarse';
-END TRY
-BEGIN CATCH
-    PRINT 'Denegado correctamente: ' + ERROR_MESSAGE();
-END CATCH
-REVERT;
-GO
-
--- Prueba D: el auditor lee todo, pero no contraseñas ni puede modificar
-EXECUTE AS USER = 'usr_auditor';
-SELECT COUNT(*) AS asientos_visibles_auditor FROM dbo.Asiento_Contable;      -- 50 000
-BEGIN TRY
-    SELECT contrasena FROM dbo.Usuario;
-    PRINT 'ERROR: debió denegarse';
-END TRY
-BEGIN CATCH
-    PRINT 'Denegado correctamente: ' + ERROR_MESSAGE();
-END CATCH
-BEGIN TRY
-    UPDATE dbo.Asiento_Contable SET glosa = 'x' WHERE id_asiento = 1;
-    PRINT 'ERROR: debió denegarse';
-END TRY
-BEGIN CATCH
-    PRINT 'Denegado correctamente: ' + ERROR_MESSAGE();
-END CATCH
-REVERT;
-GO
-
-DROP INDEX IF EXISTS UX_Usuario_Correo          ON dbo.Usuario;
-DROP INDEX IF EXISTS IX_Movimiento_Cuenta       ON dbo.Movimiento_Asiento;
-DROP INDEX IF EXISTS IX_Asiento_Usuario_Fecha   ON dbo.Asiento_Contable;
-DROP INDEX IF EXISTS IX_Asiento_Microempresa    ON dbo.Asiento_Contable;
-DROP INDEX IF EXISTS IX_Balance_Usuario_Fecha   ON dbo.Balance_General;
-DROP INDEX IF EXISTS IX_BalanceCuenta_Cuenta    ON dbo.Balance_Cuenta;
-DROP INDEX IF EXISTS IX_UsuarioMicro_Empresa    ON dbo.Usuario_MicroEmpresa;
-GO
-
---MEDICIÓN "ANTES" (ejecutar con el plan de ejecución activado)
-SET STATISTICS IO ON;
-SET STATISTICS TIME ON;
-
---asientos de un usuario en los últimos 3 meses
-SELECT id_asiento, numero, fecha, glosa, total_debe, total_haber
-FROM dbo.Asiento_Contable
-WHERE id_usuario = 1
-  AND fecha >= DATEADD(MONTH, -3, CAST(GETDATE() AS DATE));
-
---totales de una cuenta por tipo de movimiento (base del libro mayor)
-DECLARE @c INT = (SELECT id_cuenta FROM dbo.Cuenta WHERE codigo = '1101');
-SELECT m.tipo, SUM(m.monto) AS total
-FROM dbo.Movimiento_Asiento m
-WHERE m.id_cuenta = @c
-GROUP BY m.tipo;
-
--- la vista del libro mayor completa
-SELECT * FROM dbo.vw_LibroMayor;
-GO
-
 --CREACIÓN DE ÍNDICES (cada uno responde a una consulta real del sistema)
+-- Optimizacion de index Gael
 
 -- Login: buscar por correo. Además impide correos duplicados.
 CREATE UNIQUE NONCLUSTERED INDEX UX_Usuario_Correo
@@ -524,206 +847,3 @@ CREATE NONCLUSTERED INDEX IX_UsuarioMicro_Empresa
 GO
 -- No se indexa Cuenta.tipo: es una tabla pequeña, un índice costaría más de lo que ahorra.
 -- Cada índice acelera lecturas pero encarece INSERT/UPDATE; por eso solo se crean los justificados.
-
--- MEDICIÓN "DESPUÉS": repetir Q1, Q2 y Q3 y comparar logical reads y tiempos.
-SET STATISTICS IO ON;
-SET STATISTICS TIME ON;
-
-SELECT id_asiento, numero, fecha, glosa, total_debe, total_haber
-FROM dbo.Asiento_Contable
-WHERE id_usuario = 1
-  AND fecha >= DATEADD(MONTH, -3, CAST(GETDATE() AS DATE));
-
-DECLARE @c2 INT = (SELECT id_cuenta FROM dbo.Cuenta WHERE codigo = '1101');
-SELECT m.tipo, SUM(m.monto) AS total
-FROM dbo.Movimiento_Asiento m
-WHERE m.id_cuenta = @c2
-GROUP BY m.tipo;
-
-SELECT * FROM dbo.vw_LibroMayor;
-
-SET STATISTICS IO OFF;
-SET STATISTICS TIME OFF;
-GO
-
--- Revisar el uso real de los índices
-SELECT OBJECT_NAME(i.object_id) AS tabla, i.name AS indice,
-       s.user_seeks, s.user_scans, s.user_updates
-FROM sys.indexes i
-LEFT JOIN sys.dm_db_index_usage_stats s
-       ON s.object_id = i.object_id AND s.index_id = i.index_id AND s.database_id = DB_ID()
-WHERE OBJECTPROPERTY(i.object_id, 'IsUserTable') = 1
-  AND (i.name LIKE 'IX[_]%' OR i.name LIKE 'UX[_]%')
-ORDER BY tabla, indice;
-GO
-
-DECLARE @codigo VARCHAR(20) = '1101';
-
-SELECT c.codigo, c.nombre AS cuenta, a.fecha, a.numero, m.tipo, m.monto,
-       SUM(CASE WHEN c.naturaleza = 'Deudor'
-                THEN CASE m.tipo WHEN 'Debe'  THEN m.monto ELSE -m.monto END
-                ELSE CASE m.tipo WHEN 'Haber' THEN m.monto ELSE -m.monto END
-           END)
-       OVER (PARTITION BY c.id_cuenta
-             ORDER BY a.fecha, a.numero, m.id_movimiento
-             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS saldo_acumulado
-FROM dbo.Movimiento_Asiento m
-JOIN dbo.Asiento_Contable a ON a.id_asiento = m.id_asiento
-JOIN dbo.Cuenta c           ON c.id_cuenta  = m.id_cuenta
-WHERE c.codigo = @codigo
-ORDER BY a.fecha, a.numero, m.id_movimiento;
-GO
-
--- ROW_NUMBER(): los 5 asientos más recientes de CADA usuario
-;WITH r AS (
-    SELECT a.id_usuario, a.id_asiento, a.numero, a.fecha, a.glosa, a.total_debe,
-           ROW_NUMBER() OVER (PARTITION BY a.id_usuario
-                              ORDER BY a.fecha DESC, a.numero DESC) AS rn
-    FROM dbo.Asiento_Contable a
-)
-SELECT * FROM r WHERE rn <= 5
-ORDER BY id_usuario, rn;
-GO
-
--- DENSE_RANK(): ranking de cuentas por monto movido, dentro de cada tipo de cuenta
--- (a diferencia de RANK, DENSE_RANK no deja huecos tras un empate)
-SELECT c.tipo, c.codigo, c.nombre,
-       SUM(m.monto) AS monto_total,
-       DENSE_RANK() OVER (PARTITION BY c.tipo ORDER BY SUM(m.monto) DESC) AS posicion
-FROM dbo.Movimiento_Asiento m
-JOIN dbo.Cuenta c ON c.id_cuenta = m.id_cuenta
-GROUP BY c.tipo, c.codigo, c.nombre
-ORDER BY c.tipo, posicion;
-GO
-
---LAG(): variación del total de activos contra el balance anterior
-;WITH b AS (
-    SELECT id_usuario, fecha_inicio, fecha_fin, total_activo,
-           LAG(total_activo) OVER (PARTITION BY id_usuario ORDER BY fecha_inicio) AS activo_anterior
-    FROM dbo.Balance_General
-)
-SELECT id_usuario, fecha_inicio, fecha_fin, total_activo, activo_anterior,
-       total_activo - activo_anterior AS variacion,
-       CAST(100.0 * (total_activo - activo_anterior) / NULLIF(activo_anterior, 0) AS DECIMAL(10,2)) AS variacion_pct
-FROM b
-ORDER BY id_usuario, fecha_inicio;
-GO
-
---Optimizacion con indices
---Gael---------------------------------------------
---Creacion de esquemas de seguridad
-create schema seguridad;
-go
-
-create function seguridad.fn_accesoporusuario(@id_usuario int)
-returns table
-with schemabinding
-as
-return
-    select 1 as permitido
-    where @id_usuario = cast(session_context(n'id_usuario') as int)
-       or is_member('rol_administrador') = 1
-       or is_member('rol_auditor') = 1
-       or is_member('db_owner') = 1;
-go
-
-create function seguridad.fn_accesoporasiento(@id_asiento int)
-returns table
-with schemabinding
-as
-return
-    select 1 as permitido
-    from dbo.asiento_contable a
-    where a.id_asiento = @id_asiento
-      and (a.id_usuario = cast(session_context(n'id_usuario') as int)
-           or is_member('rol_administrador') = 1
-           or is_member('rol_auditor') = 1
-           or is_member('db_owner') = 1);
-go
-
-create function seguridad.fn_accesoporbalance(@id_balance int)
-returns table
-with schemabinding
-as
-return
-    select 1 as permitido
-    from dbo.balance_general b
-    where b.id_balance = @id_balance
-      and (b.id_usuario = cast(session_context(n'id_usuario') as int)
-           or is_member('rol_administrador') = 1
-           or is_member('rol_auditor') = 1
-           or is_member('db_owner') = 1);
-go
-
-create security policy seguridad.pol_accesoporusuario
-    add filter predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.asiento_contable,
-    add block predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.asiento_contable after insert,
-    add block predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.asiento_contable after update,
-    add filter predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.balance_general,
-    add block predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.balance_general after insert,
-    add block predicate seguridad.fn_accesoporusuario(id_usuario) on dbo.balance_general after update,
-    add filter predicate seguridad.fn_accesoporasiento(id_asiento) on dbo.movimiento_asiento,
-    add block predicate seguridad.fn_accesoporasiento(id_asiento) on dbo.movimiento_asiento after insert,
-    add filter predicate seguridad.fn_accesoporbalance(id_balance) on dbo.balance_cuenta,
-    add block predicate seguridad.fn_accesoporbalance(id_balance) on dbo.balance_cuenta after insert
-    with (state = on);
-go
-
-execute as user = 'usr_app';
-exec sp_set_session_context @key = n'id_usuario', @value = 1;
-
-select count(*) as asientos_visibles_usuario1
-from dbo.asiento_contable;
-
-begin try
-    insert into dbo.asiento_contable(numero, fecha, glosa, id_usuario)
-    values (900001, getdate(), 'intento de insertar a nombre de otro', 2);
-    print 'error: debio bloquearse';
-end try
-begin catch
-    print 'bloqueado correctamente: ' + error_message();
-end catch
-
-exec sp_set_session_context @key = n'id_usuario', @value = null;
-
-select count(*) as asientos_visibles_sin_contexto
-from dbo.asiento_contable;
-
-begin try
-    delete from dbo.asiento_contable
-    where id_asiento = 1;
-    print 'error: debio denegarse';
-end try
-begin catch
-    print 'denegado correctamente: ' + error_message();
-end catch
-
-revert;
-go
-
-execute as user = 'usr_auditor';
-
-select count(*) as asientos_visibles_auditor
-from dbo.asiento_contable;
-
-begin try
-    select contrasena
-    from dbo.usuario;
-    print 'error: debio denegarse';
-end try
-begin catch
-    print 'denegado correctamente: ' + error_message();
-end catch
-
-begin try
-    update dbo.asiento_contable
-    set glosa = 'x'
-    where id_asiento = 1;
-    print 'error: debio denegarse';
-end try
-begin catch
-    print 'denegado correctamente: ' + error_message();
-end catch
-
-revert;
-go
